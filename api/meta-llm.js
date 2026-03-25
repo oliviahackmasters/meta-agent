@@ -4,7 +4,7 @@
 // - ANTHROPIC_API_KEY
 // - GEMINI_API_KEY (Google API key for Generative Language API)
 
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -165,17 +165,16 @@ async function runGemini(prompt, debug = false) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("Missing GEMINI_API_KEY");
 
-  const ai = new GoogleGenAI({ apiKey: key });
+  const ai = new GoogleGenerativeAI(key);
 
   if (debug) console.log("runGemini: calling with model gemini-1.5-flash");
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-1.5-flash",
-      contents: prompt,
-    });
+    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-    const text = response.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
 
     return {
       provider: "gemini",
