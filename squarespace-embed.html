@@ -1,0 +1,43 @@
+<div id="meta-chat" style="font-family: Arial, sans-serif; max-width: 700px; margin: 12px auto;">
+  <h3>Meta LLM Agent</h3>
+  <textarea id="prompt" rows="6" style="width: 100%; resize: vertical; padding: 8px;">Ask something to OpenAI, Claude, and Gemini in one request...</textarea>
+  <button id="send" style="margin-top: 8px; padding: 8px 14px;">Send</button>
+  <div id="status" style="margin-top: 8px; color: #444;"></div>
+  <pre id="out" style="margin-top: 8px; background: #f6f6f6; padding: 12px; border-radius: 4px; overflow-x: auto; height: 260px;"></pre>
+</div>
+<script>
+const API_ENDPOINT = "https://your-vercel.app/api/meta-llm"; // <-- replace this with your real deploy URL
+
+async function ask() {
+  const prompt = document.getElementById("prompt").value.trim();
+  if (!prompt) {
+    document.getElementById("status").textContent = "Please enter a prompt.";
+    return;
+  }
+
+  document.getElementById("status").textContent = "Querying models...";
+  document.getElementById("out").textContent = "";
+
+  try {
+    const response = await fetch(API_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
+
+    if (!response.ok) {
+      const e = await response.text();
+      throw new Error(`${response.status} ${response.statusText}: ${e}`);
+    }
+
+    const data = await response.json();
+    document.getElementById("status").textContent = `Model responses received (${data.results.length}).`;
+    document.getElementById("out").textContent = JSON.stringify(data, null, 2);
+  } catch (error) {
+    document.getElementById("status").textContent = `Request failed: ${error.message}`;
+    document.getElementById("out").textContent = error.stack || error.toString();
+  }
+}
+
+document.getElementById("send").onclick = ask;
+</script>
