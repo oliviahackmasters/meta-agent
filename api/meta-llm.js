@@ -4,6 +4,8 @@
 // - ANTHROPIC_API_KEY
 // - GEMINI_API_KEY (Google API key for Generative Language API)
 
+import { GoogleGenAI } from "@google/genai";
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -162,57 +164,25 @@ async function runGemini(prompt, debug = false) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("Missing GEMINI_API_KEY");
 
-  // Use v1 endpoint with API key
-  const url = `https://generativelanguage.googleapis.com/v1/models/text-bison-001:generate?key=${key}`;
-  if (debug) console.log("runGemini: calling", url);
-  let r = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      prompt: {
-        text: prompt,
-      },
-      temperature: 0.7,
-      maxOutputTokens: 500,
-    }),
-    next: { revalidate: 0 },
-  });
+  const ai = new GoogleGenAI({ apiKey: key });
 
-  if (r.status === 404) {
-    // Some regions still require v1beta2 prefix
-    if (debug) console.log("runGemini: 404 fallback to v1beta2");
-    const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta2/models/text-bison-001:generate?key=${key}`;
-    r = await fetch(fallbackUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        prompt: {
-          text: prompt,
-        },
-        temperature: 0.7,
-        maxOutputTokens: 500,
-      }),
-      next: { revalidate: 0 },
+  if (debug) console.log("runGemini: calling with model gemini-1.5-flash");
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-1.5-flash",
+      contents: prompt,
     });
+
+    const text = response.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+
+    return {
+      provider: "gemini",
+      text: text || "",
+      raw: response,
+    };
+  } catch (error) {
+    if (debug) console.log("runGemini: error", error.message);
+    throw new Error(`Gemini error: ${error.message}`);
   }
-
-  if (!r.ok) {
-    const errText = await r.text();
-    const error = new Error(`Gemini error: ${r.status} ${errText}`);
-    error.provider = "gemini";
-    throw error;
-  }
-
-  const data = await r.json();
-  const text = (data?.candidates?.[0]?.output || data?.output)?.trim();
-
-  return {
-    provider: "gemini",
-    text: text || "",
-    raw: data,
-  };
 }
