@@ -1,22 +1,176 @@
-<div id="meta-chat" style="font-family: Arial, sans-serif; max-width: 700px; margin: 12px auto;">
-  <h3>Meta LLM Agent</h3>
-  <textarea id="prompt" rows="6" style="width: 100%; resize: vertical; padding: 8px;">Ask something to OpenAI, Claude, and Gemini in one request...</textarea>
-  <button id="send" style="margin-top: 8px; padding: 8px 14px;">Send</button>
-  <div id="status" style="margin-top: 8px; color: #444;"></div>
-  <pre id="out" style="margin-top: 8px; background: #f6f6f6; padding: 12px; border-radius: 4px; overflow-x: auto; height: 260px;"></pre>
+<style>
+  :root{
+    --hm-black:#000000;
+    --hm-white:#FFFFFF;
+    --hm-copper:#D18057;
+  }
+
+  #hmTrendChat *{ box-sizing: border-box; }
+
+  #hmTrendChat .hm-wrap{
+    font-family: "Montserrat", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--hm-black);
+    color: var(--hm-white);
+    border: 1px solid var(--hm-copper);
+    padding: 18px;
+    letter-spacing: 0.2px;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+  }
+
+  #hmTrendChat .hm-title{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin: 0 0 14px 0;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    font-size: 14px;
+    color: var(--hm-white);
+  }
+
+  #hmTrendChat .hm-title .hm-badge{
+    display:inline-block;
+    border: 1px solid var(--hm-copper);
+    padding: 6px 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.4px;
+    font-size: 12px;
+    color: var(--hm-copper);
+  }
+
+  #hmTrendChat .hm-sub{
+    margin: 0 0 14px 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: rgba(255,255,255,0.85);
+  }
+
+  #hmTrendChat .hm-row{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:center;
+    margin: 10px 0;
+  }
+
+  #hmTrendChat .hm-textarea{
+      resize: none;
+      min-height: 72px;
+      max-height: 160px;
+      line-height: 1.4;
+      width:100%;
+      background: transparent;
+      color: var(--hm-white);
+      border: 1px solid var(--hm-copper);
+      padding: 10px;
+      font-size: 13px;
+      outline: none;
+  }
+
+  #hmTrendChat .hm-btn{
+    appearance:none;
+    background: transparent;
+    color: var(--hm-white);
+    border: 1px solid var(--hm-copper);
+    padding: 10px 12px;
+    cursor:pointer;
+    text-transform: uppercase;
+    letter-spacing: 1.1px;
+    font-weight: 600;
+    font-size: 12px;
+    line-height: 1;
+    border-radius: 0;
+    transition: background 120ms linear, color 120ms linear;
+    height: 44px;
+    box-sizing: border-box;
+  }
+  #hmTrendChat .hm-btn:hover{
+    background: var(--hm-copper);
+    color: var(--hm-black);
+  }
+  #hmTrendChat .hm-btn:disabled{
+    opacity: 0.55;
+    cursor:not-allowed;
+  }
+
+  #hmTrendChat .hm-status{
+    margin-left:auto;
+    font-size: 12px;
+    letter-spacing: 0.9px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.85);
+  }
+  #hmTrendChat .hm-status.is-error{ color: var(--hm-copper); }
+
+  #hmTrendChat .hm-chat{
+    margin-top: 14px;
+    border: 1px solid var(--hm-copper);
+    background: rgba(255,255,255,0.02);
+    padding: 12px;
+    max-height: 420px;
+    overflow:auto;
+  }
+
+  #hmTrendChat .hm-msg{
+    border: 1px solid rgba(209,128,87,0.55);
+    padding: 10px 12px;
+    margin: 0 0 10px 0;
+    border-radius: 0;
+    word-break: break-word;
+    line-height: 1.6;
+    font-size: 13px;
+  }
+  #hmTrendChat .hm-msg.hm-me{
+    background: rgba(209,128,87,0.10);
+  }
+  #hmTrendChat .hm-msg.hm-ai{
+    background: rgba(255,255,255,0.01);
+  }
+
+</style>
+
+<div id="hmTrendChat">
+  <div class="hm-wrap">
+    <div class="hm-title">
+      <span>Meta LLM Agent</span>
+      <span class="hm-badge">OpenAI + Claude + Gemini</span>
+      <span id="hm-status" class="hm-status">idle</span>
+    </div>
+    <p class="hm-sub">One prompt to all providers. The first successful answer appears above; all raw outputs are visible.</p>
+
+    <div class="hm-row">
+      <textarea id="prompt" class="hm-textarea" placeholder="Ask anything..."></textarea>
+      <button id="send" class="hm-btn">Send</button>
+    </div>
+
+    <div class="hm-chat" id="chatTranscript"></div>
+  </div>
 </div>
+
 <script>
-const API_ENDPOINT = "https://your-vercel.app/api/meta-llm"; // <-- replace this with your real deploy URL
+const API_ENDPOINT = "https://meta-agent-opal.vercel.app/api/meta-llm"; // update to your Vercel deployment
+const btn = document.getElementById("send");
+const promptInput = document.getElementById("prompt");
+const statusEl = document.getElementById("hm-status");
+const transcript = document.getElementById("chatTranscript");
 
 async function ask() {
-  const prompt = document.getElementById("prompt").value.trim();
+  const prompt = promptInput.value.trim();
   if (!prompt) {
-    document.getElementById("status").textContent = "Please enter a prompt.";
+    statusEl.textContent = "enter prompt";
+    statusEl.classList.add("is-error");
     return;
   }
 
-  document.getElementById("status").textContent = "Querying models...";
-  document.getElementById("out").textContent = "";
+  statusEl.textContent = "querying models...";
+  statusEl.classList.remove("is-error");
+  btn.disabled = true;
+
+  appendMessage("you", prompt, "hm-me");
 
   try {
     const response = await fetch(API_ENDPOINT, {
@@ -26,18 +180,44 @@ async function ask() {
     });
 
     if (!response.ok) {
-      const e = await response.text();
-      throw new Error(`${response.status} ${response.statusText}: ${e}`);
+      const errText = await response.text();
+      throw new Error(`${response.status} ${response.statusText}: ${errText}`);
     }
 
-    const data = await response.json();
-    document.getElementById("status").textContent = `Model responses received (${data.results.length}).`;
-    document.getElementById("out").textContent = JSON.stringify(data, null, 2);
-  } catch (error) {
-    document.getElementById("status").textContent = `Request failed: ${error.message}`;
-    document.getElementById("out").textContent = error.stack || error.toString();
+    const json = await response.json();
+    statusEl.textContent = `results: ${json.results.filter(r => r.text).length}/${json.results.length}`;
+
+    if (json.chosen?.text) {
+      appendMessage("Best result", json.chosen.text, "hm-ai");
+    }
+
+    json.results.forEach((item) => {
+      const content = item.text || item.error || "no response";
+      appendMessage(item.provider || "unknown", content, "hm-ai");
+    });
+
+  } catch (err) {
+    statusEl.textContent = "failed";
+    statusEl.classList.add("is-error");
+    appendMessage("error", err.message, "hm-ai");
+  } finally {
+    btn.disabled = false;
   }
 }
 
-document.getElementById("send").onclick = ask;
+function appendMessage(author, text, cssClass) {
+  const message = document.createElement("div");
+  message.className = `hm-msg ${cssClass}`;
+  const title = document.createElement("div");
+  title.className = "hm-msg-title";
+  title.textContent = author;
+  const body = document.createElement("div");
+  body.className = "hm-msg-body";
+  body.textContent = text;
+  message.appendChild(title);
+  message.appendChild(body);
+  transcript.prepend(message);
+}
+
+btn.onclick = ask;
 </script>

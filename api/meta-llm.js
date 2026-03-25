@@ -91,20 +91,42 @@ async function runClaude(prompt) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error("Missing ANTHROPIC_API_KEY");
 
-  const r = await fetch("https://api.anthropic.com/v1/chat/completions", {
+  // Anthropic v1 complete endpoint
+  const anthropicUrl = "https://api.anthropic.com/v1/complete";
+  const payload = {
+    model: "claude-3.5", // or claude-4 if available
+    prompt: `\n\nHuman: ${prompt}\n\nAssistant:`,
+    max_tokens_to_sample: 500,
+    temperature: 0.7,
+  };
+
+  let r = await fetch(anthropicUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${key}`,
     },
-    body: JSON.stringify({
-      model: "claude-3.5",
-      messages: [{ role: "user", content: prompt }],
-      max_tokens_to_sample: 500,
-      temperature: 0.7,
-    }),
+    body: JSON.stringify(payload),
     next: { revalidate: 0 },
   });
+
+  if (r.status === 404) {
+    // Fallback to chat endpoint if endpoint or model path differs.
+    r = await fetch("https://api.anthropic.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model: "claude-3.5", // try the same model name
+        messages: [{ role: "user", content: prompt }],
+        max_tokens_to_sample: 500,
+        temperature: 0.7,
+      }),
+      next: { revalidate: 0 },
+    });
+  }
 
   if (!r.ok) {
     const errText = await r.text();
@@ -114,7 +136,7 @@ async function runClaude(prompt) {
   }
 
   const data = await r.json();
-  const text = data?.completion?.trim() || data?.output?.trim();
+  const text = (data?.completion || data?.output || data?.choices?.[0]?.message?.content || "").trim();
 
   return {
     provider: "claude",
@@ -127,10 +149,10 @@ async function runGemini(prompt) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("Missing GEMINI_API_KEY");
 
-  const model = "models/text-bison-001";
-  const url = `https://generativelanguage.googleapis.com/v1beta2/${model}:generate?key=${key}`;
+  // Use v1 endpoint with API key
+  const url = `https://generativelanguage.googleapis.com/v1/models/text-bison-001:generate?key=${key}`;
 
-  const r = await fetch(url, {
+  let r = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -145,6 +167,25 @@ async function runGemini(prompt) {
     next: { revalidate: 0 },
   });
 
+  if (r.status === 404) {
+    // Some regions still require v1beta2 prefix
+    const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta2/models/text-bison-001:generate?key=${key}`;
+    r = await fetch(fallbackUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        prompt: {
+          text: prompt,
+        },
+        temperature: 0.7,
+        maxOutputTokens: 500,
+      }),
+      next: { revalidate: 0 },
+    });
+  }
+
   if (!r.ok) {
     const errText = await r.text();
     const error = new Error(`Gemini error: ${r.status} ${errText}`);
@@ -153,7 +194,7 @@ async function runGemini(prompt) {
   }
 
   const data = await r.json();
-  const text = data?.candidates?.[0]?.output?.trim();
+  const text = (data?.candidates?.[0]?.output || data?.output)?.trim();
 
   return {
     provider: "gemini",
