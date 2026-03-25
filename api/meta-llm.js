@@ -19,15 +19,25 @@ export default async function handler(req, res) {
 
   const body = req.body;
   const prompt = body?.prompt?.toString?.().trim();
+  const debug = Boolean(process.env.DEBUG_META_AGENT);
 
   if (!prompt) {
     return res.status(400).json({ error: "Missing prompt" });
   }
 
+  if (debug) {
+    console.log("meta-llm: incoming prompt", prompt);
+    console.log("meta-llm: providers keys", {
+      OPENAI_API_KEY: !!process.env.OPENAI_API_KEY,
+      ANTHROPIC_API_KEY: !!process.env.ANTHROPIC_API_KEY,
+      GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
+    });
+  }
+
   const calls = [
-    runOpenAI(prompt),
-    runClaude(prompt),
-    runGemini(prompt),
+    runOpenAI(prompt, debug),
+    runClaude(prompt, debug),
+    runGemini(prompt, debug),
   ];
 
   const settled = await Promise.allSettled(calls);
@@ -51,10 +61,11 @@ export default async function handler(req, res) {
   });
 }
 
-async function runOpenAI(prompt) {
+async function runOpenAI(prompt, debug = false) {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error("Missing OPENAI_API_KEY");
 
+  if (debug) console.log("runOpenAI: calling OpenAI", { model: "gpt-4.1" });
   const r = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -87,7 +98,7 @@ async function runOpenAI(prompt) {
   };
 }
 
-async function runClaude(prompt) {
+async function runClaude(prompt, debug = false) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error("Missing ANTHROPIC_API_KEY");
 
@@ -100,6 +111,7 @@ async function runClaude(prompt) {
     temperature: 0.7,
   };
 
+  if (debug) console.log("runClaude: calling path", anthropicUrl, "payload", payload);
   let r = await fetch(anthropicUrl, {
     method: "POST",
     headers: {
@@ -112,6 +124,7 @@ async function runClaude(prompt) {
 
   if (r.status === 404) {
     // Fallback to chat endpoint if endpoint or model path differs.
+    if (debug) console.log("runClaude: 404 fallback to chat completion");
     r = await fetch("https://api.anthropic.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -145,13 +158,13 @@ async function runClaude(prompt) {
   };
 }
 
-async function runGemini(prompt) {
+async function runGemini(prompt, debug = false) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("Missing GEMINI_API_KEY");
 
   // Use v1 endpoint with API key
   const url = `https://generativelanguage.googleapis.com/v1/models/text-bison-001:generate?key=${key}`;
-
+  if (debug) console.log("runGemini: calling", url);
   let r = await fetch(url, {
     method: "POST",
     headers: {
@@ -169,6 +182,7 @@ async function runGemini(prompt) {
 
   if (r.status === 404) {
     // Some regions still require v1beta2 prefix
+    if (debug) console.log("runGemini: 404 fallback to v1beta2");
     const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta2/models/text-bison-001:generate?key=${key}`;
     r = await fetch(fallbackUrl, {
       method: "POST",
