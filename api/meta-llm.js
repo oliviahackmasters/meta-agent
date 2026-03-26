@@ -22,8 +22,8 @@ export default async function handler(req, res) {
     const settled = await Promise.allSettled([
       runOpenAI(prompt),
       runClaude(prompt),
-      runGemini(prompt),
-      runDeepSeek(prompt),
+      runGemini(prompt)
+      // runDeepSeek(prompt),
     ]);
 
     const results = settled.map((item) => {
@@ -231,7 +231,7 @@ async function runCombined(results, prompt) {
       Authorization: `Bearer ${key}`,
     },
     body: JSON.stringify({
-      model: "gpt-4.1",
+      model: "gpt-4.1-mini",
       messages: [
         { role: "system", content: systemPrompt },
         {
