@@ -15,6 +15,7 @@
     padding: 18px;
     letter-spacing: 0.2px;
     width: 100%;
+    height:100vh;
     max-width: 100%;
     margin: 0;
   }
@@ -111,8 +112,14 @@
     border: 1px solid var(--hm-copper);
     background: rgba(255,255,255,0.02);
     padding: 12px;
-    max-height: 420px;
     overflow:auto;
+    height: 70vh;          /* main change */
+    min-height: 500px;     /* safety for small screens */
+    max-height: 75vh;      /* prevents full takeover */
+    overflow-y: auto;
+    overflow-x: hidden;   /* ← prevents horizontal spill */
+    padding-right: 6px;
+
   }
 
   #hmTrendChat .hm-msg{
@@ -140,6 +147,11 @@
   color: var(--hm-white);
 }
 
+#hmTrendChat .hm-msg-body{
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
 #hmTrendChat .hm-msg-body > :first-child{
   margin-top: 0;
 }
@@ -149,15 +161,33 @@
 }
 
 #hmTrendChat .hm-msg-body p{
-  margin: 0 0 10px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 8px 0;
 }
 
-#hmTrendChat .hm-msg-body h1,
-#hmTrendChat .hm-msg-body h2,
-#hmTrendChat .hm-msg-body h3,
+#hmTrendChat .hm-msg-body h1{
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0 0 8px 0;
+}
+
+#hmTrendChat .hm-msg-body h2{
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+}
+
+#hmTrendChat .hm-msg-body h3{
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 6px 0;
+}
+
 #hmTrendChat .hm-msg-body h4{
-  margin: 0 0 10px 0;
-  line-height: 1.3;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 6px 0;
 }
 
 #hmTrendChat .hm-msg-body ul,
@@ -168,6 +198,8 @@
 
 #hmTrendChat .hm-msg-body li{
   margin: 0 0 6px 0;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 #hmTrendChat .hm-msg-body strong{
@@ -216,6 +248,10 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin: 0 0 14px 0;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;       /* ← CRITICAL for grid */
+  overflow: hidden;
 }
 
 #hmTrendChat .hm-result-card{
@@ -256,14 +292,6 @@
 
 #hmTrendChat .hm-msg-body p{
   margin: 0 0 10px 0;
-}
-
-#hmTrendChat .hm-msg-body h1,
-#hmTrendChat .hm-msg-body h2,
-#hmTrendChat .hm-msg-body h3,
-#hmTrendChat .hm-msg-body h4{
-  margin: 0 0 10px 0;
-  line-height: 1.3;
 }
 
 #hmTrendChat .hm-msg-body ul,
@@ -347,17 +375,18 @@ const btn = document.getElementById("send");
 const promptInput = document.getElementById("prompt");
 const statusEl = document.getElementById("hm-status");
 const transcript = document.getElementById("chatTranscript");
+let busy = false;
 
 async function ask() {
-  const prompt = input.value.trim();
+  const prompt = promptInput.value.trim();
   if (!prompt || busy) return;
 
   busy = true;
-  sendBtn.disabled = true;
-  sendBtn.textContent = "Sending...";
+  btn.disabled = true;
+  btn.textContent = "Sending...";
 
   try {
-    const response = await fetch(API_URL, {
+    const response = await fetch(API_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -377,15 +406,11 @@ async function ask() {
       json.chosen?.text || ""
     );
 
-    input.value = "";
+    promptInput.value = "";
 
-    const count = Array.isArray(json.results)
-      ? json.results.filter(item => item.text && !item.error).length
-      : 0;
+    
 
-    if (counter) {
-      counter.textContent = `RESULTS: ${count}/3`;
-    }
+    
   } catch (err) {
     transcript.innerHTML = "";
 
@@ -401,13 +426,11 @@ async function ask() {
     );
     transcript.appendChild(bestWrap);
 
-    if (counter) {
-      counter.textContent = "RESULTS: 0/3";
-    }
+  
   } finally {
     busy = false;
-    sendBtn.disabled = false;
-    sendBtn.textContent = "SEND";
+    btn.disabled = false;
+    btn.textContent = "SEND";
   }
 }
 
