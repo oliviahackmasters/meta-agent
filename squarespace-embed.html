@@ -403,7 +403,7 @@ async function ask() {
     renderConversation(
       prompt,
       json.results || [],
-      json.chosen?.text || ""
+      json.combined?.text || ""
     );
 
     promptInput.value = "";
@@ -503,7 +503,7 @@ function renderConversation(prompt, results, chosenText) {
   const bestWrap = document.createElement("div");
   bestWrap.className = "hm-best-wrap";
   bestWrap.appendChild(
-    createTextCard("best / combined response", chosenText || "no response", "hm-ai")
+    createTextCard("COMBINED RESPONSE", chosenText || "no response", "hm-ai")
   );
   transcript.appendChild(bestWrap);
 

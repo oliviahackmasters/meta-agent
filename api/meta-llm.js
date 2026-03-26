@@ -32,13 +32,16 @@ export default async function handler(req, res) {
       };
     });
 
-    return res.status(200).json({
-      prompt,
-      results,
-      meta: {
-        timestamp: new Date().toISOString(),
-      },
-    });
+    const combined = await runCombined(results, prompt);
+
+  return res.status(200).json({
+    prompt,
+    results,
+    combined,
+    meta: {
+      timestamp: new Date().toISOString(),
+    },
+  });
   } catch (err) {
     console.error("meta-llm handler failed:", err);
     return res.status(500).json({
@@ -145,4 +148,77 @@ async function runGemini(prompt) {
     err.provider = "gemini";
     throw err;
   }
+}
+
+async function runCombined(results, prompt) {
+  const key = process.env.OPENAI_API_KEY;
+
+  if (!key) {
+    return {
+      provider: "openai-combined",
+      error: "Missing OPENAI_API_KEY",
+    };
+  }
+
+  // Extract usable outputs
+  const usable = results
+    .filter(r => r.text && !r.error)
+    .map(r => `${r.provider.toUpperCase()}:\n${r.text}`)
+    .join("\n\n---\n\n");
+
+  if (!usable) {
+    return {
+      provider: "openai-combined",
+      error: "No valid responses to combine",
+    };
+  }
+
+  const systemPrompt = `
+You are a meta AI summarizer.
+
+Given multiple responses from different AI models to the same prompt, produce:
+- ONE concise, high-quality combined answer
+- Remove repetition
+- Keep only the strongest insights
+- Prefer clarity over length
+- No mention of providers
+- No meta commentary
+
+Output should be clean and direct.
+`;
+
+  const r = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4.1",
+      messages: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: `User prompt:\n${prompt}\n\nModel outputs:\n\n${usable}`,
+        },
+      ],
+      temperature: 0.4,
+      max_completion_tokens: 300,
+    }),
+  });
+
+  if (!r.ok) {
+    const text = await r.text();
+    return {
+      provider: "openai-combined",
+      error: `Combine error: ${r.status} ${text}`,
+    };
+  }
+
+  const data = await r.json();
+
+  return {
+    provider: "combined",
+    text: data?.choices?.[0]?.message?.content?.trim() || "",
+  };
 }
