@@ -482,7 +482,7 @@ function renderConversation(prompt, results, chosenText) {
   const grid = document.createElement("div");
   grid.className = "hm-results-grid";
 
-  const providerOrder = ["gemini", "openai", "claude", "deepseek"];
+  const providerOrder = ["gemini", "openai", "claude"]; 
 
   providerOrder.forEach((providerName) => {
     const match = (results || []).find(

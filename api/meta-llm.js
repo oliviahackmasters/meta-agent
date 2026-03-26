@@ -68,7 +68,7 @@ async function runOpenAI(prompt) {
       Authorization: `Bearer ${key}`,
     },
     body: JSON.stringify({
-      model: "gpt-4.1",
+      model: "gpt-5-4",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.7,
       max_completion_tokens: 500,
