@@ -7,6 +7,7 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Max-Age", "86400");
 
   if (req.method === "OPTIONS") return res.status(204).end();
+
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -22,6 +23,7 @@ export default async function handler(req, res) {
       runOpenAI(prompt),
       runClaude(prompt),
       runGemini(prompt),
+      runDeepSeek(prompt),
     ]);
 
     const results = settled.map((item) => {
@@ -34,14 +36,14 @@ export default async function handler(req, res) {
 
     const combined = await runCombined(results, prompt);
 
-  return res.status(200).json({
-    prompt,
-    results,
-    combined,
-    meta: {
-      timestamp: new Date().toISOString(),
-    },
-  });
+    return res.status(200).json({
+      prompt,
+      results,
+      combined,
+      meta: {
+        timestamp: new Date().toISOString(),
+      },
+    });
   } catch (err) {
     console.error("meta-llm handler failed:", err);
     return res.status(500).json({
@@ -81,6 +83,7 @@ async function runOpenAI(prompt) {
   }
 
   const data = await r.json();
+
   return {
     provider: "openai",
     text: data?.choices?.[0]?.message?.content?.trim() || "",
@@ -103,7 +106,7 @@ async function runClaude(prompt) {
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-4-5",
       max_tokens: 500,
       messages: [{ role: "user", content: prompt }],
     }),
@@ -117,6 +120,7 @@ async function runClaude(prompt) {
   }
 
   const data = await r.json();
+
   return {
     provider: "claude",
     text: data?.content?.[0]?.text?.trim() || "",
@@ -135,7 +139,7 @@ async function runGemini(prompt) {
     const ai = new GoogleGenAI({ apiKey: key });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.5-flash",
       contents: prompt,
     });
 
@@ -150,42 +154,75 @@ async function runGemini(prompt) {
   }
 }
 
+async function runDeepSeek(prompt) {
+  const key = process.env.DEEPSEEK_API_KEY;
+  if (!key) {
+    const err = new Error("Missing DEEPSEEK_API_KEY");
+    err.provider = "deepseek";
+    throw err;
+  }
+
+  const r = await fetch("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      model: "deepseek-chat",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.7,
+      max_tokens: 500,
+      stream: false,
+    }),
+  });
+
+  if (!r.ok) {
+    const text = await r.text();
+    const err = new Error(`DeepSeek error: ${r.status} ${text}`);
+    err.provider = "deepseek";
+    throw err;
+  }
+
+  const data = await r.json();
+
+  return {
+    provider: "deepseek",
+    text: data?.choices?.[0]?.message?.content?.trim() || "",
+  };
+}
+
 async function runCombined(results, prompt) {
   const key = process.env.OPENAI_API_KEY;
 
   if (!key) {
     return {
-      provider: "openai-combined",
+      provider: "combined",
       error: "Missing OPENAI_API_KEY",
     };
   }
 
-  // Extract usable outputs
   const usable = results
-    .filter(r => r.text && !r.error)
-    .map(r => `${r.provider.toUpperCase()}:\n${r.text}`)
+    .filter((r) => r.text && !r.error)
+    .map((r) => `${r.provider.toUpperCase()}:\n${r.text}`)
     .join("\n\n---\n\n");
 
   if (!usable) {
     return {
-      provider: "openai-combined",
+      provider: "combined",
       error: "No valid responses to combine",
     };
   }
 
-  const systemPrompt = `
-You are a meta AI summarizer.
-
-Given multiple responses from different AI models to the same prompt, produce:
-- ONE concise, high-quality combined answer
-- Remove repetition
-- Keep only the strongest insights
-- Prefer clarity over length
-- No mention of providers
-- No meta commentary
-
-Output should be clean and direct.
-`;
+  const systemPrompt = [
+    "You are a meta AI summarizer.",
+    "Given multiple model answers to the same prompt, write one concise combined response.",
+    "Remove repetition.",
+    "Keep the strongest useful insights.",
+    "Prefer clarity over length.",
+    "Do not mention providers.",
+    "Do not add meta commentary.",
+  ].join(" ");
 
   const r = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -210,7 +247,7 @@ Output should be clean and direct.
   if (!r.ok) {
     const text = await r.text();
     return {
-      provider: "openai-combined",
+      provider: "combined",
       error: `Combine error: ${r.status} ${text}`,
     };
   }

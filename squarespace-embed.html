@@ -245,7 +245,7 @@
 
 #hmTrendChat .hm-results-grid{
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin: 0 0 14px 0;
   width: 100%;
@@ -481,7 +481,7 @@ function renderConversation(prompt, results, chosenText) {
   const grid = document.createElement("div");
   grid.className = "hm-results-grid";
 
-  const providerOrder = ["gemini", "openai", "claude"];
+  const providerOrder = ["gemini", "openai", "claude", "deepseek"];
 
   providerOrder.forEach((providerName) => {
     const match = (results || []).find(
