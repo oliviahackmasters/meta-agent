@@ -5,22 +5,25 @@
     --hm-copper:#D18057;
   }
 
-  #hmTrendChat *{ box-sizing: border-box; }
-
-  #hmTrendChat .hm-wrap{
-    font-family: "Montserrat", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-    background: var(--hm-black);
-    color: var(--hm-white);
-    border: 1px solid var(--hm-copper);
-    padding: 18px;
-    letter-spacing: 0.2px;
-    width: 100%;
-    height:100vh;
-    max-width: 100%;
-    margin: 0;
+  #hmMetaCog,
+  #hmMetaCog * {
+    box-sizing: border-box;
   }
 
-  #hmTrendChat .hm-title{
+#hmMetaCog {
+  width: 100%;
+}
+  #hmMetaCog .hm-wrap{
+    width: 100%;
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid var(--hm-copper);
+  }
+
+  #hmMetaCog .hm-title{
     display:flex;
     align-items:center;
     gap:10px;
@@ -32,7 +35,7 @@
     color: var(--hm-white);
   }
 
-  #hmTrendChat .hm-title .hm-badge{
+  #hmMetaCog .hm-title .hm-badge{
     display:inline-block;
     border: 1px solid var(--hm-copper);
     padding: 6px 10px;
@@ -43,25 +46,26 @@
     color: var(--hm-copper);
   }
 
-  #hmTrendChat .hm-sub{
+  #hmMetaCog .hm-sub{
     margin: 0 0 14px 0;
     font-size: 12px;
     line-height: 1.5;
     color: rgba(255,255,255,0.85);
   }
 
-  #hmTrendChat .hm-row{
-    display:flex;
-    gap:10px;
-    flex-wrap:wrap;
-    align-items:center;
-    margin: 10px 0;
+  #hmMetaCog .hm-row{
+     display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: stretch;
+      width: 100%;
   }
 
-  #hmTrendChat .hm-textarea{
-      resize: none;
-      min-height: 72px;
-      max-height: 160px;
+  #hmMetaCog .hm-textarea{
+       width: 100%;
+      min-width: 0;
+      min-height: 92px;
+      resize: vertical;
       line-height: 1.4;
       width:100%;
       background: transparent;
@@ -72,7 +76,12 @@
       outline: none;
   }
 
-  #hmTrendChat .hm-btn{
+  #hmMetaCog .hm-btn{
+    align-self: stretch;
+    height: 100%;
+    min-height: 92px;
+    white-space: nowrap;
+
     appearance:none;
     background: transparent;
     color: var(--hm-white);
@@ -86,43 +95,38 @@
     line-height: 1;
     border-radius: 0;
     transition: background 120ms linear, color 120ms linear;
-    height: 44px;
     box-sizing: border-box;
   }
-  #hmTrendChat .hm-btn:hover{
+  #hmMetaCog .hm-btn:hover{
     background: var(--hm-copper);
     color: var(--hm-black);
   }
-  #hmTrendChat .hm-btn:disabled{
+  #hmMetaCog .hm-btn:disabled{
     opacity: 0.55;
     cursor:not-allowed;
   }
 
-  #hmTrendChat .hm-status{
+  #hmMetaCog .hm-status{
     margin-left:auto;
     font-size: 12px;
     letter-spacing: 0.9px;
     text-transform: uppercase;
     color: rgba(255,255,255,0.85);
   }
-  #hmTrendChat .hm-status.is-error{ color: var(--hm-copper); }
+  #hmMetaCog .hm-status.is-error{ color: var(--hm-copper); }
 
-  #hmTrendChat .hm-chat{
-    margin-top: 14px;
-    border: 1px solid var(--hm-copper);
-    background: rgba(255,255,255,0.02);
-    padding: 12px;
-    overflow:auto;
-    height: 70vh;          /* main change */
-    min-height: 500px;     /* safety for small screens */
-    max-height: 75vh;      /* prevents full takeover */
+  #hmMetaCog .hm-chat{
+    width: 100%;
+    max-width: 100%;
     overflow-y: auto;
-    overflow-x: hidden;   /* ← prevents horizontal spill */
-    padding-right: 6px;
+    overflow-x: hidden;
+    padding: 12px;
+    border: 1px solid var(--hm-copper);
+    height: clamp(280px, 45vh, 560px);
 
   }
 
-  #hmTrendChat .hm-msg{
+  #hmMetaCog .hm-msg{
     border: 1px solid rgba(209,128,87,0.55);
     padding: 10px 12px;
     margin: 0 0 10px 0;
@@ -131,14 +135,14 @@
     line-height: 1.6;
     font-size: 13px;
   }
-  #hmTrendChat .hm-msg.hm-me{
+  #hmMetaCog .hm-msg.hm-me{
     background: rgba(209,128,87,0.10);
   }
-  #hmTrendChat .hm-msg.hm-ai{
+  #hmMetaCog .hm-msg.hm-ai{
     background: rgba(255,255,255,0.01);
   }
 
-  #hmTrendChat .hm-msg-title{
+  #hmMetaCog .hm-msg-title{
   margin: 0 0 8px 0;
   font-size: 12px;
   font-weight: 700;
@@ -147,70 +151,70 @@
   color: var(--hm-white);
 }
 
-#hmTrendChat .hm-msg-body{
+#hmMetaCog .hm-msg-body{
   word-break: break-word;
   overflow-wrap: anywhere;
 }
 
-#hmTrendChat .hm-msg-body > :first-child{
+#hmMetaCog .hm-msg-body > :first-child{
   margin-top: 0;
 }
 
-#hmTrendChat .hm-msg-body > :last-child{
+#hmMetaCog .hm-msg-body > :last-child{
   margin-bottom: 0;
 }
 
-#hmTrendChat .hm-msg-body p{
+#hmMetaCog .hm-msg-body p{
   font-size: 13px;
   line-height: 1.5;
   margin: 0 0 8px 0;
 }
 
-#hmTrendChat .hm-msg-body h1{
+#hmMetaCog .hm-msg-body h1{
   font-size: 16px;
   font-weight: 700;
   margin: 0 0 8px 0;
 }
 
-#hmTrendChat .hm-msg-body h2{
+#hmMetaCog .hm-msg-body h2{
   font-size: 15px;
   font-weight: 600;
   margin: 0 0 8px 0;
 }
 
-#hmTrendChat .hm-msg-body h3{
+#hmMetaCog .hm-msg-body h3{
   font-size: 14px;
   font-weight: 600;
   margin: 0 0 6px 0;
 }
 
-#hmTrendChat .hm-msg-body h4{
+#hmMetaCog .hm-msg-body h4{
   font-size: 13px;
   font-weight: 600;
   margin: 0 0 6px 0;
 }
 
-#hmTrendChat .hm-msg-body ul,
-#hmTrendChat .hm-msg-body ol{
+#hmMetaCog .hm-msg-body ul,
+#hmMetaCog .hm-msg-body ol{
   margin: 0 0 10px 18px;
   padding: 0;
 }
 
-#hmTrendChat .hm-msg-body li{
+#hmMetaCog .hm-msg-body li{
   margin: 0 0 6px 0;
   font-size: 13px;
   line-height: 1.5;
 }
 
-#hmTrendChat .hm-msg-body strong{
+#hmMetaCog .hm-msg-body strong{
   font-weight: 700;
 }
 
-#hmTrendChat .hm-msg-body em{
+#hmMetaCog .hm-msg-body em{
   font-style: italic;
 }
 
-#hmTrendChat .hm-msg-body code{
+#hmMetaCog .hm-msg-body code{
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   padding: 1px 4px;
@@ -218,7 +222,7 @@
   background: rgba(255,255,255,0.03);
 }
 
-#hmTrendChat .hm-msg-body pre{
+#hmMetaCog .hm-msg-body pre{
   overflow: auto;
   padding: 10px;
   border: 1px solid rgba(209,128,87,0.55);
@@ -226,43 +230,40 @@
   margin: 0 0 10px 0;
 }
 
-#hmTrendChat .hm-msg-body pre code{
+#hmMetaCog .hm-msg-body pre code{
   border: 0;
   padding: 0;
   background: transparent;
 }
 
-#hmTrendChat .hm-msg-body blockquote{
+#hmMetaCog .hm-msg-body blockquote{
   margin: 0 0 10px 0;
   padding-left: 12px;
   border-left: 2px solid var(--hm-copper);
   color: rgba(255,255,255,0.85);
 }
 
-#hmTrendChat .hm-user-wrap{
+#hmMetaCog .hm-user-wrap{
   margin: 0 0 14px 0;
 }
 
-#hmTrendChat .hm-results-grid{
+#hmMetaCog .hm-results-grid{
   display: grid;
-  /* grid-template-columns: repeat(4, minmax(0, 1fr)); */
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 12px;
   margin: 0 0 14px 0;
   width: 100%;
   max-width: 100%;
-  min-width: 0;       /* ← CRITICAL for grid */
-  overflow: hidden;
 }
 
-#hmTrendChat .hm-result-card{
+#hmMetaCog .hm-result-card{
   border: 1px solid var(--hm-copper);
   background: rgba(255,255,255,0.01);
   padding: 14px;
   min-width: 0;
 }
 
-#hmTrendChat .hm-result-card .hm-msg-title{
+#hmMetaCog .hm-result-card .hm-msg-title{
   margin: 0 0 8px 0;
   font-size: 12px;
   font-weight: 700;
@@ -271,11 +272,11 @@
   color: var(--hm-white);
 }
 
-#hmTrendChat .hm-best-wrap{
+#hmMetaCog .hm-best-wrap{
   margin: 0 0 14px 0;
 }
 
-#hmTrendChat .hm-msg-title{
+#hmMetaCog .hm-msg-title{
   margin: 0 0 8px 0;
   font-size: 12px;
   font-weight: 700;
@@ -283,37 +284,37 @@
   color: var(--hm-white);
 }
 
-#hmTrendChat .hm-msg-body > :first-child{
+#hmMetaCog .hm-msg-body > :first-child{
   margin-top: 0;
 }
 
-#hmTrendChat .hm-msg-body > :last-child{
+#hmMetaCog .hm-msg-body > :last-child{
   margin-bottom: 0;
 }
 
-#hmTrendChat .hm-msg-body p{
+#hmMetaCog .hm-msg-body p{
   margin: 0 0 10px 0;
 }
 
-#hmTrendChat .hm-msg-body ul,
-#hmTrendChat .hm-msg-body ol{
+#hmMetaCog .hm-msg-body ul,
+#hmMetaCog .hm-msg-body ol{
   margin: 0 0 10px 18px;
   padding: 0;
 }
 
-#hmTrendChat .hm-msg-body li{
+#hmMetaCog .hm-msg-body li{
   margin: 0 0 6px 0;
 }
 
-#hmTrendChat .hm-msg-body strong{
+#hmMetaCog .hm-msg-body strong{
   font-weight: 700;
 }
 
-#hmTrendChat .hm-msg-body em{
+#hmMetaCog .hm-msg-body em{
   font-style: italic;
 }
 
-#hmTrendChat .hm-msg-body code{
+#hmMetaCog .hm-msg-body code{
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   padding: 1px 4px;
@@ -321,7 +322,7 @@
   background: rgba(255,255,255,0.03);
 }
 
-#hmTrendChat .hm-msg-body pre{
+#hmMetaCog .hm-msg-body pre{
   overflow: auto;
   padding: 10px;
   border: 1px solid rgba(209,128,87,0.55);
@@ -329,13 +330,13 @@
   margin: 0 0 10px 0;
 }
 
-#hmTrendChat .hm-msg-body pre code{
+#hmMetaCog .hm-msg-body pre code{
   border: 0;
   padding: 0;
   background: transparent;
 }
 
-#hmTrendChat .hm-msg-body blockquote{
+#hmMetaCog .hm-msg-body blockquote{
   margin: 0 0 10px 0;
   padding-left: 12px;
   border-left: 2px solid var(--hm-copper);
@@ -343,29 +344,102 @@
 }
 
 @media (max-width: 900px){
-  #hmTrendChat .hm-results-grid{
+  #hmMetaCog .hm-results-grid{
     grid-template-columns: 1fr;
   }
+}
+
+#hmMetaCog .hm-provider-picker{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: center;
+  margin: 0 0 14px 0;
+}
+
+#hmMetaCog .hm-provider-label{
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--hm-white);
+}
+
+#hmMetaCog .hm-provider-option{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--hm-white);
+  cursor: pointer;
+}
+
+#hmMetaCog .hm-provider-option input{
+  accent-color: #d18057;
+}
+
+@media (max-width: 700px){
+  #hmMetaCog .hm-row{
+    grid-template-columns: 1fr;
+  }
+
+  #hmMetaCog .hm-btn{
+    min-height: 52px;
+    width: 100%;
+  }
+
 }
 
 
 </style>
 
-<div id="hmTrendChat">
+<div id="hmMetaCog">
   <div class="hm-wrap">
     <div class="hm-title">
       <span>Meta LLM Agent</span>
-      <span class="hm-badge">OpenAI + Claude + Gemini</span>
+      <span class="hm-badge">OpenAI + Claude + Gemini + Infomaniak + DeepSeek</span>
       <span id="hm-status" class="hm-status">idle</span>
-    </div>
-    <p class="hm-sub">One prompt to all providers. The first successful answer appears above; all raw outputs are visible.</p>
+      </div>
+      <p class="hm-sub">Choose one or more models, compare the outputs, and review the combined response below.</p>
+      
+
+    <div class="hm-chat" id="chatTranscript"></div>
+
+    <div class="hm-provider-picker">
+          <span class="hm-provider-label">Use models:</span>
+
+        <label class="hm-provider-option">
+          <input type="checkbox" value="openai" checked>
+          <span>OpenAI</span>
+        </label>
+
+        <label class="hm-provider-option">
+          <input type="checkbox" value="claude" checked>
+          <span>Claude</span>
+        </label>
+
+        <label class="hm-provider-option">
+          <input type="checkbox" value="gemini" checked>
+          <span>Gemini</span>
+        </label>
+
+        <label class="hm-provider-option">
+          <input type="checkbox" value="infomaniak">
+          <span>Infomaniak</span>
+        </label>
+
+        <label class="hm-provider-option">
+          <input type="checkbox" value="deepseek">
+          <span>DeepSeek</span>
+        </label>
+
+       
+      </div>
 
     <div class="hm-row">
       <textarea id="prompt" class="hm-textarea" placeholder="Ask anything..."></textarea>
       <button id="send" class="hm-btn">Send</button>
     </div>
-
-    <div class="hm-chat" id="chatTranscript"></div>
   </div>
 </div>
 
@@ -377,6 +451,9 @@ const promptInput = document.getElementById("prompt");
 const statusEl = document.getElementById("hm-status");
 const transcript = document.getElementById("chatTranscript");
 let busy = false;
+const providerInputs = Array.from(
+  document.querySelectorAll('.hm-provider-picker input[type="checkbox"]')
+);
 
 async function ask() {
   const prompt = promptInput.value.trim();
@@ -387,13 +464,23 @@ async function ask() {
   btn.textContent = "Sending...";
 
   try {
-    const response = await fetch(API_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ prompt })
-    });
+    const providers = getSelectedProviders();
+
+      if (!providers.length) {
+        statusEl.textContent = "select at least one model";
+        return;
+      }
+
+      const response = await fetch(API_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          prompt,
+          providers
+        })
+      });
 
     const json = await response.json();
 
@@ -404,7 +491,8 @@ async function ask() {
     renderConversation(
       prompt,
       json.results || [],
-      json.combined?.text || ""
+      json.combined?.text || "",
+      json.selectedProviders || []
     );
 
     promptInput.value = "";
@@ -433,6 +521,12 @@ async function ask() {
     btn.disabled = false;
     btn.textContent = "SEND";
   }
+}
+
+function getSelectedProviders() {
+  return providerInputs
+    .filter((input) => input.checked)
+    .map((input) => input.value);
 }
 
 function createTextCard(titleText, content, cssClass = "") {
@@ -471,7 +565,7 @@ function createPlainTextCard(titleText, content, cssClass = "") {
   return card;
 }
 
-function renderConversation(prompt, results, chosenText) {
+function renderConversation(prompt, results, combinedText, selectedProviders) {
   transcript.innerHTML = "";
 
   const userWrap = document.createElement("div");
@@ -482,7 +576,9 @@ function renderConversation(prompt, results, chosenText) {
   const grid = document.createElement("div");
   grid.className = "hm-results-grid";
 
-  const providerOrder = ["gemini", "openai", "claude"]; 
+  const providerOrder = selectedProviders.length
+    ? selectedProviders
+    : (results || []).map((item) => (item.provider || "").toLowerCase());
 
   providerOrder.forEach((providerName) => {
     const match = (results || []).find(

@@ -1,5 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 
+const AVAILABLE_PROVIDERS = ["openai", "claude", "gemini", "deepseek", "infomaniak"];
+const DEFAULT_PROVIDERS = ["openai", "claude", "gemini"];
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -19,17 +22,44 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Missing prompt" });
     }
 
-    const settled = await Promise.allSettled([
-      runOpenAI(prompt),
-      runClaude(prompt),
-      runGemini(prompt)
-      // runDeepSeek(prompt),
-    ]);
+    const requestedProviders = Array.isArray(req.body?.providers)
+      ? req.body.providers
+      : DEFAULT_PROVIDERS;
 
-    const results = settled.map((item) => {
-      if (item.status === "fulfilled") return item.value;
+    const selectedProviders = requestedProviders
+      .map((p) => String(p).toLowerCase().trim())
+      .filter((p) => AVAILABLE_PROVIDERS.includes(p));
+
+    const uniqueProviders = [...new Set(selectedProviders)];
+
+    if (!uniqueProviders.length) {
+      return res.status(400).json({
+        error: "No valid providers selected",
+        availableProviders: AVAILABLE_PROVIDERS,
+      });
+    }
+
+    const providerRunners = {
+      openai: runOpenAI,
+      claude: runClaude,
+      gemini: runGemini,
+      deepseek: runDeepSeek,
+      infomaniak: runInfomaniak,
+    };
+
+    const settled = await Promise.allSettled(
+      uniqueProviders.map((provider) => providerRunners[provider](prompt))
+    );
+
+    const results = settled.map((item, index) => {
+      const provider = uniqueProviders[index];
+
+      if (item.status === "fulfilled") {
+        return item.value;
+      }
+
       return {
-        provider: item.reason?.provider || "unknown",
+        provider,
         error: item.reason?.message || String(item.reason),
       };
     });
@@ -38,6 +68,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       prompt,
+      selectedProviders: uniqueProviders,
       results,
       combined,
       meta: {
@@ -188,6 +219,55 @@ async function runDeepSeek(prompt) {
 
   return {
     provider: "deepseek",
+    text: data?.choices?.[0]?.message?.content?.trim() || "",
+  };
+}
+
+async function runInfomaniak(prompt) {
+  const token = process.env.INFOMANIAK_API_TOKEN;
+  const productId = process.env.INFOMANIAK_PRODUCT_ID;
+  const model = process.env.INFOMANIAK_MODEL || "qwen3";
+
+  if (!token) {
+    const err = new Error("Missing INFOMANIAK_API_TOKEN");
+    err.provider = "infomaniak";
+    throw err;
+  }
+
+  if (!productId) {
+    const err = new Error("Missing INFOMANIAK_PRODUCT_ID");
+    err.provider = "infomaniak";
+    throw err;
+  }
+
+  const r = await fetch(
+    `https://api.infomaniak.com/2/ai/${productId}/openai/v1/chat/completions`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.7,
+        max_tokens: 500,
+      }),
+    }
+  );
+
+  if (!r.ok) {
+    const text = await r.text();
+    const err = new Error(`Infomaniak error: ${r.status} ${text}`);
+    err.provider = "infomaniak";
+    throw err;
+  }
+
+  const data = await r.json();
+
+  return {
+    provider: "infomaniak",
     text: data?.choices?.[0]?.message?.content?.trim() || "",
   };
 }
