@@ -4,6 +4,7 @@ import { buildEvidencePack } from "../lib/evidence.js";
 import { updateSessionSummary, type Message } from "../lib/memory.js";
 import { buildPromptContext, type UserMemory } from "../lib/contextBuilder.js";
 import { runModels } from "../lib/runModels.js";
+import { generateSearchQueries } from "../lib/generateSearchQueries.js";
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -24,13 +25,23 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Missing input" });
     }
 
-    // Phase 1: Route
+    // Phase 1: Generate search queries using LLM
+    const searchQueries = await generateSearchQueries(input, messages);
+
+    // Phase 2: Route (keep for other decisions)
     const decision = await routeUserQuery(input, messages);
 
-    // Fetch sources if needed
+    // Fetch sources for each search query
     let sources = [];
-    if (decision.needsWeb) {
-      sources = await fetchSources(input);
+    if (searchQueries.length > 0) {
+      const sourcePromises = searchQueries.map(query => fetchSources(query));
+      const sourceArrays = await Promise.all(sourcePromises);
+      sources = sourceArrays.flat();
+      // Remove duplicates based on URL
+      const uniqueSources = sources.filter((source, index, self) =>
+        index === self.findIndex(s => s.url === source.url)
+      );
+      sources = uniqueSources.slice(0, 20); // Limit total sources
     }
 
     // Build evidence pack

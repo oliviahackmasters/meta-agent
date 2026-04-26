@@ -7,27 +7,40 @@ export type Source = {
 };
 
 export async function fetchSources(query: string): Promise<Source[]> {
-  // Placeholder implementation
-  // In a real implementation, fetch from RSS feeds or web search API
+  const API_KEY = process.env.NEWSAPI_KEY || 'YOUR_NEWSAPI_KEY_HERE'; // Replace with your NewsAPI key
+  const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&sortBy=publishedAt&apiKey=${API_KEY}`;
 
-  // For now, return mock sources based on query
-  const mockSources: Source[] = [
-    {
-      title: `Latest on ${query}`,
-      url: "https://example.com/news1",
-      date: new Date().toISOString(),
-      summary: `Summary of latest information about ${query}.`,
-      reliability: "medium",
-    },
-    {
-      title: `Update on ${query}`,
-      url: "https://example.com/news2",
-      date: new Date().toISOString(),
-      summary: `Another perspective on ${query}.`,
-      reliability: "high",
-    },
-  ];
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`NewsAPI error: ${response.status}`);
+    }
+    const data = await response.json();
 
-  // Limit to top 5-10
-  return mockSources.slice(0, 5);
+    if (data.status !== 'ok') {
+      throw new Error(`NewsAPI error: ${data.message}`);
+    }
+
+    const sources: Source[] = data.articles.slice(0, 10).map((article: any) => ({
+      title: article.title,
+      url: article.url,
+      date: article.publishedAt,
+      summary: article.description || article.title,
+      reliability: "medium" as const, // Default to medium, could be enhanced
+    }));
+
+    return sources;
+  } catch (error) {
+    console.error('Error fetching sources:', error);
+    // Fallback to mock data
+    return [
+      {
+        title: `Latest on ${query}`,
+        url: "https://example.com/news1",
+        date: new Date().toISOString(),
+        summary: `Summary of latest information about ${query}.`,
+        reliability: "medium",
+      },
+    ];
+  }
 }
