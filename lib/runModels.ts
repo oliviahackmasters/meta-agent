@@ -21,7 +21,17 @@ async function runGemini(context: string): Promise<ModelResponse> {
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-    const prompt = `${context}\n\nPlease provide a helpful response based on the above context. If the context includes current information, use it to give up-to-date answers. Keep your response concise and relevant.`;
+    const prompt = `${context}
+
+CRITICAL INSTRUCTIONS:
+- Today's date is April 26, 2026. Use this date in your response.
+- The "Evidence" section contains current, real-time information fetched from the internet.
+- IGNORE any outdated knowledge from your training data.
+- Use ONLY the information provided in the context, especially the Evidence section, for current events and facts.
+- If the Evidence section has news articles, summarize them as the latest headlines.
+- Keep your response concise and directly answer the user's query using the provided information.
+
+Please provide a helpful response based on the above context:`;
 
     const result = await model.generateContent(prompt);
     const response = result.response;

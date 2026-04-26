@@ -58,7 +58,9 @@ export default async function handler(req, res) {
     };
 
     // Build context
-    const systemPrompt = "You are a helpful AI assistant.";
+    const systemPrompt = `You are a helpful AI assistant. Today's date is ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} (${new Date().toISOString().split('T')[0]}).
+
+IMPORTANT: Use the provided evidence and current information in your responses. The evidence contains up-to-date news and data fetched from the internet. Do not rely on outdated training data - prioritize the evidence provided.`;
     const recentMessages = messages.slice(-10); // Short-term memory
 
     const context = buildPromptContext({
