@@ -1,5 +1,8 @@
-// Assuming we have the LLM functions from meta-llm.js
-// For now, placeholder implementations
+// Real LLM implementations using available APIs
+
+import { GoogleGenAI } from "@google/genai";
+
+const genAI = new GoogleGenAI(process.env.GOOGLE_API_KEY || "");
 
 export type UIBlock =
   | { type: "chart"; data: any }
@@ -14,29 +17,70 @@ export type ModelResponse = {
   error?: string;
 };
 
+async function runGemini(context: string): Promise<ModelResponse> {
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    const prompt = `${context}\n\nPlease provide a helpful response based on the above context. If the context includes current information, use it to give up-to-date answers. Keep your response concise and relevant.`;
+
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const text = response.text();
+
+    return {
+      provider: "gemini",
+      answer: text,
+    };
+  } catch (error) {
+    return {
+      provider: "gemini",
+      answer: "Error calling Gemini API",
+      error: error.message,
+    };
+  }
+}
+
+async function runOpenAI(context: string): Promise<ModelResponse> {
+  // Placeholder - would need OpenAI API key and implementation
+  return {
+    provider: "openai",
+    answer: `Based on the provided context, here's what I can tell you. (Note: This is a placeholder response. OpenAI API integration would be needed for real responses.)`,
+  };
+}
+
+async function runClaude(context: string): Promise<ModelResponse> {
+  // Placeholder - would need Anthropic API key and implementation
+  return {
+    provider: "claude",
+    answer: `Analyzing the context provided... (Note: This is a placeholder response. Claude API integration would be needed for real responses.)`,
+  };
+}
+
+async function runDeepSeek(context: string): Promise<ModelResponse> {
+  // Placeholder - would need DeepSeek API key and implementation
+  return {
+    provider: "deepseek",
+    answer: `From the information available in the context... (Note: This is a placeholder response. DeepSeek API integration would be needed for real responses.)`,
+  };
+}
+
 export async function runModels(context: string): Promise<Record<string, ModelResponse>> {
-  // Placeholder: in real implementation, call actual LLMs with instruction to output JSON
   const results: Record<string, ModelResponse> = {};
 
-  // Mock responses with structured output
-  results.openai = {
-    provider: "openai",
-    answer: "OpenAI response based on context.",
-    ui: { type: "chart", data: { labels: ["A", "B"], values: [1, 2] } }
-  };
-  results.claude = {
-    provider: "claude",
-    answer: "Claude response based on context.",
-    ui: { type: "scenario", data: [{ name: "Scenario 1", probability: 50 }] }
-  };
-  results.gemini = {
-    provider: "gemini",
-    answer: "Gemini response based on context."
-  };
-  results.deepseek = {
-    provider: "deepseek",
-    answer: "DeepSeek response based on context."
-  };
+  // Run all models in parallel
+  const promises = [
+    runOpenAI(context),
+    runClaude(context),
+    runGemini(context),
+    runDeepSeek(context),
+  ];
+
+  const responses = await Promise.all(promises);
+
+  results.openai = responses[0];
+  results.claude = responses[1];
+  results.gemini = responses[2];
+  results.deepseek = responses[3];
 
   return results;
 }
