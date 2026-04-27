@@ -92,6 +92,9 @@ async function runOpenAI(prompt) {
     throw err;
   }
 
+  const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const fullPrompt = `TODAY IS ${todayStr}. You must answer with today's actual date.\n\n${prompt}`;
+
   const r = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -99,8 +102,11 @@ async function runOpenAI(prompt) {
       Authorization: `Bearer ${key}`,
     },
     body: JSON.stringify({
-      model: "gpt-4.1",
-      messages: [{ role: "user", content: prompt }],
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: "You are answering questions on " + todayStr + ". Always use today's actual date in your responses, not your training data cutoff." },
+        { role: "user", content: fullPrompt }
+      ],
       temperature: 0.7,
       max_completion_tokens: 500,
     }),
@@ -129,6 +135,9 @@ async function runClaude(prompt) {
     throw err;
   }
 
+  const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const fullPrompt = `TODAY IS ${todayStr}. You must answer with today's actual date.\n\n${prompt}`;
+
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -139,7 +148,8 @@ async function runClaude(prompt) {
     body: JSON.stringify({
       model: "claude-sonnet-4-5",
       max_tokens: 500,
-      messages: [{ role: "user", content: prompt }],
+      system: "You are answering questions on " + todayStr + ". Always use today's actual date in your responses, not your training data cutoff.",
+      messages: [{ role: "user", content: fullPrompt }],
     }),
   });
 
@@ -167,11 +177,14 @@ async function runGemini(prompt) {
   }
 
   try {
+    const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const fullPrompt = `TODAY IS ${todayStr}. You must answer with today's actual date, not your training data.\n\n${prompt}`;
+    
     const ai = new GoogleGenAI({ apiKey: key });
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
+      model: "gemini-2.0-flash",
+      contents: fullPrompt,
     });
 
     return {
@@ -193,6 +206,9 @@ async function runDeepSeek(prompt) {
     throw err;
   }
 
+  const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const fullPrompt = `TODAY IS ${todayStr}. You must answer with today's actual date.\n\n${prompt}`;
+
   const r = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
     headers: {
@@ -201,7 +217,10 @@ async function runDeepSeek(prompt) {
     },
     body: JSON.stringify({
       model: "deepseek-chat",
-      messages: [{ role: "user", content: prompt }],
+      messages: [
+        { role: "system", content: "You are answering questions on " + todayStr + ". Always use today's actual date in your responses, not your training data cutoff." },
+        { role: "user", content: fullPrompt }
+      ],
       temperature: 0.7,
       max_tokens: 500,
       stream: false,
@@ -240,6 +259,9 @@ async function runInfomaniak(prompt) {
     throw err;
   }
 
+  const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const fullPrompt = `TODAY IS ${todayStr}. You must answer with today's actual date.\n\n${prompt}`;
+
   const r = await fetch(
     `https://api.infomaniak.com/2/ai/${productId}/openai/v1/chat/completions`,
     {
@@ -250,7 +272,10 @@ async function runInfomaniak(prompt) {
       },
       body: JSON.stringify({
         model,
-        messages: [{ role: "user", content: prompt }],
+        messages: [
+          { role: "system", content: "You are answering questions on " + todayStr + ". Always use today's actual date in your responses, not your training data cutoff." },
+          { role: "user", content: fullPrompt }
+        ],
         temperature: 0.7,
         max_tokens: 500,
       }),
