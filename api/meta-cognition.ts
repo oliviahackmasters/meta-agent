@@ -5,6 +5,7 @@ import { updateSessionSummary, type Message } from "../lib/memory.js";
 import { buildPromptContext, type UserMemory } from "../lib/contextBuilder.js";
 import { runModels } from "../lib/runModels.js";
 import { generateSearchQueries } from "../lib/generateSearchQueries.js";
+import { needsWebResearch, webSearch } from "../lib/webSearch.js";
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -31,6 +32,12 @@ export default async function handler(req, res) {
     // Phase 2: Route (keep for other decisions)
     const decision = await routeUserQuery(input, messages);
 
+    // Phase 3: Check if web research is needed
+    let webSearchResult = { sources: [], searchPerformed: false, error: undefined };
+    if (needsWebResearch(input)) {
+      webSearchResult = await webSearch(input);
+    }
+
     // Fetch sources for each search query
     let sources = [];
     if (searchQueries.length > 0) {
@@ -42,6 +49,15 @@ export default async function handler(req, res) {
         index === self.findIndex(s => s.url === source.url)
       );
       sources = uniqueSources.slice(0, 20); // Limit total sources
+    }
+
+    // Merge web search results with traditional sources
+    if (webSearchResult.sources.length > 0) {
+      const allSources = [...webSearchResult.sources, ...sources];
+      const uniqueSources = allSources.filter((source, index, self) =>
+        index === self.findIndex(s => s.url === source.url)
+      );
+      sources = uniqueSources.slice(0, 25); // Allow a few more sources with web search
     }
 
     // Build evidence pack
@@ -80,6 +96,11 @@ IMPORTANT: Use the provided evidence and current information in your responses. 
       decision,
       evidence,
       results,
+      webSearch: {
+        performed: webSearchResult.searchPerformed,
+        resultsCount: webSearchResult.sources.length,
+        error: webSearchResult.error,
+      },
       meta: {
         timestamp: new Date().toISOString(),
       },

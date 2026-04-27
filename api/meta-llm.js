@@ -296,12 +296,17 @@ async function runCombined(results, prompt) {
 
   const systemPrompt = [
     "You are a meta AI summarizer.",
-    "Given multiple model answers to the same prompt, write one concise combined response.",
-    "Remove repetition.",
-    "Keep the strongest useful insights.",
-    "Prefer clarity over length.",
-    "Do not mention providers.",
-    "Do not add meta commentary.",
+    "Today's date is " + new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) + ".",
+    "Given multiple model answers to the same prompt based on web search evidence:",
+    "- Write one concise combined response",
+    "- Remove repetition and prioritize strongest insights",
+    "- Treat web search results in the prompt context as source of truth",
+    "- For retail research, synthesize consumer behavior and market trend insights",
+    "- Do NOT invent statistics, report names, or sources not mentioned in the evidence",
+    "- Do not mention individual providers",
+    "- Acknowledge when evidence is weak or limited",
+    "- Prefer clarity over length",
+    "- Do not add meta commentary",
   ].join(" ");
 
   const r = await fetch("https://api.openai.com/v1/chat/completions", {
