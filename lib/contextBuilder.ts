@@ -13,6 +13,7 @@ export function buildPromptContext({
   recentMessages,
   evidence,
   userInput,
+  outputFormat,
 }: {
   systemPrompt: string;
   memory: UserMemory;
@@ -20,11 +21,20 @@ export function buildPromptContext({
   recentMessages: any[]; // Assume Message[]
   evidence: EvidencePack;
   userInput: string;
+  outputFormat: "text" | "table" | "chart" | "scenario";
 }): string {
   const parts = [];
 
   // 1. system prompt (HIGHEST priority)
   parts.push(systemPrompt);
+
+  if (outputFormat === "scenario") {
+    parts.push(
+      "The user is asking for a scenario matrix. Identify the key drivers affecting the industry, choose X and Y axis drivers for potential futures, and present the result as a clean 2x2 matrix. " +
+      "First list the key drivers clearly, then show the matrix with axis labels and four quadrant descriptions. " +
+      "Do not use a long narrative; use a simple table/matrix format for clarity."
+    );
+  }
 
   // 2. LIVE EVIDENCE SECTION (must be clear and early)
   if (evidence.sources && evidence.sources.length > 0) {

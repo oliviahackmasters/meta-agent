@@ -3,6 +3,15 @@ import { GoogleGenAI } from "@google/genai";
 const AVAILABLE_PROVIDERS = ["openai", "claude", "gemini", "deepseek", "infomaniak"];
 const DEFAULT_PROVIDERS = ["openai", "claude", "gemini"];
 
+function isScenarioPrompt(text) {
+  const lower = text.toLowerCase();
+  return /\b(scenario|matrix|2x2|drivers|probability|future)\b/.test(lower);
+}
+
+function augmentScenarioPrompt(text) {
+  return `This user wants a clean scenario matrix output. Identify the top drivers, select X and Y axis drivers for future uncertainty, and present a simple 2x2 matrix table with axis labels and four quadrant descriptions. Use the crossing of the drivers in each box.\n\n${text}`;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -16,10 +25,14 @@ export default async function handler(req, res) {
   }
 
   try {
-    const prompt = req.body?.prompt?.toString?.().trim();
+    let prompt = req.body?.prompt?.toString?.().trim();
 
     if (!prompt) {
       return res.status(400).json({ error: "Missing prompt" });
+    }
+
+    if (isScenarioPrompt(prompt)) {
+      prompt = augmentScenarioPrompt(prompt);
     }
 
     const requestedProviders = Array.isArray(req.body?.providers)

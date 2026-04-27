@@ -99,6 +99,7 @@ Do not invent statistics or sources. If evidence is limited, say so.`;
       recentMessages,
       evidence,
       userInput: input,
+      outputFormat: decision.outputFormat,
     });
 
     // Run models
