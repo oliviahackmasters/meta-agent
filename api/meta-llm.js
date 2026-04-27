@@ -294,20 +294,18 @@ async function runCombined(results, prompt) {
     };
   }
 
-  const systemPrompt = [
-    "You are a meta AI summarizer.",
-    "Today's date is " + new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) + ".",
-    "Given multiple model answers to the same prompt based on web search evidence:",
-    "- Write one concise combined response",
-    "- Remove repetition and prioritize strongest insights",
-    "- Treat web search results in the prompt context as source of truth",
-    "- For retail research, synthesize consumer behavior and market trend insights",
-    "- Do NOT invent statistics, report names, or sources not mentioned in the evidence",
-    "- Do not mention individual providers",
-    "- Acknowledge when evidence is weak or limited",
-    "- Prefer clarity over length",
-    "- Do not add meta commentary",
-  ].join(" ");
+  const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const systemPrompt = `You are synthesizing responses from multiple AI models on ${todayStr}.
+
+Key rules for synthesis:
+- All models had access to LIVE EVIDENCE fetched from the internet TODAY
+- Use the strongest, most sourced insights from the model outputs
+- Prioritize information that references the Evidence
+- Remove repetition and hallucinations
+- If models conflict, explain the difference
+- Do NOT invent statistics or sources
+- Keep it concise and clear
+- Use British English`;
 
   const r = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -316,7 +314,7 @@ async function runCombined(results, prompt) {
       Authorization: `Bearer ${key}`,
     },
     body: JSON.stringify({
-      model: "gpt-4.1-mini",
+      model: "gpt-4o-mini",
       messages: [
         { role: "system", content: systemPrompt },
         {
@@ -325,7 +323,7 @@ async function runCombined(results, prompt) {
         },
       ],
       temperature: 0.4,
-      max_completion_tokens: 300,
+      max_completion_tokens: 400,
     }),
   });
 

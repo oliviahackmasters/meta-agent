@@ -74,9 +74,22 @@ export default async function handler(req, res) {
     };
 
     // Build context
-    const systemPrompt = `You are a helpful AI assistant. Today's date is ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} (${new Date().toISOString().split('T')[0]}).
+    const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const todayISO = new Date().toISOString().split('T')[0];
+    
+    const systemPrompt = `TODAY IS ${todayStr} (${todayISO}) - NOT EARLIER.
 
-IMPORTANT: Use the provided evidence and current information in your responses. The evidence contains up-to-date news and data fetched from the internet. Do not rely on outdated training data - prioritize the evidence provided.`;
+Your task: Answer the user's question using LIVE EVIDENCE fetched from the internet TODAY.
+
+CRITICAL: You have access to Evidence sources below. Use them as your PRIMARY source, especially for:
+- Current events, news, headlines
+- Today's prices, data, statistics
+- Market trends, consumer behavior
+- Latest reports and research
+
+Your training data is from 2024 or earlier. This Evidence section is from TODAY and takes ABSOLUTE PRIORITY.
+
+Do not invent statistics or sources. If evidence is limited, say so.`;
     const recentMessages = messages.slice(-10); // Short-term memory
 
     const context = buildPromptContext({

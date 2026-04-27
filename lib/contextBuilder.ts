@@ -23,30 +23,38 @@ export function buildPromptContext({
 }): string {
   const parts = [];
 
-  // 1. system prompt
+  // 1. system prompt (HIGHEST priority)
   parts.push(systemPrompt);
 
-  // 2. developer/tool instructions
-  parts.push("You are a helpful AI assistant. Provide structured responses with JSON when appropriate.");
+  // 2. LIVE EVIDENCE SECTION (must be clear and early)
+  if (evidence.sources && evidence.sources.length > 0) {
+    const evidenceStr = evidence.sources
+      .map((s, i) => `[${i + 1}] "${s.title}"\n    URL: ${s.url}\n    Source: ${s.summary}`)
+      .join("\n\n");
+    parts.push(`=== LIVE EVIDENCE FROM INTERNET TODAY ===\nUse this Evidence as your PRIMARY SOURCE for current information:\n\n${evidenceStr}\n=== END EVIDENCE ===`);
+  } else {
+    parts.push("=== LIVE EVIDENCE FROM INTERNET TODAY ===\nNo current sources found.\n=== END EVIDENCE ===");
+  }
 
-  // 3. long-term memory
-  parts.push(`User preferences: ${memory.preferences.join(", ")}`);
-  parts.push(`Tools used: ${memory.toolsUsed.join(", ")}`);
-  parts.push(`Project context: ${memory.projectContext}`);
+  // 3. Current user query
+  parts.push(`USER QUESTION: ${userInput}`);
 
-  // 4. session summary
-  parts.push(`Session summary: ${sessionSummary}`);
+  // 4. Recent messages (context)
+  if (recentMessages && recentMessages.length > 0) {
+    const recentStr = recentMessages.map(m => `${m.role}: ${m.content}`).join("\n");
+    parts.push(`Recent conversation:\n${recentStr}`);
+  }
 
-  // 5. recent messages
-  const recentStr = recentMessages.map(m => `${m.role}: ${m.content}`).join("\n");
-  parts.push(`Recent conversation:\n${recentStr}`);
-
-  // 6. evidence pack
-  const evidenceStr = evidence.sources.map(s => `- ${s.title}: ${s.summary} (${s.url})`).join("\n");
-  parts.push(`Evidence:\n${evidenceStr}`);
-
-  // 7. current user input
-  parts.push(`Current query: ${userInput}`);
+  // 5. Other context (lower priority)
+  if (memory.preferences.length > 0) {
+    parts.push(`User preferences: ${memory.preferences.join(", ")}`);
+  }
+  if (memory.toolsUsed.length > 0) {
+    parts.push(`Tools used: ${memory.toolsUsed.join(", ")}`);
+  }
+  if (memory.projectContext) {
+    parts.push(`Project context: ${memory.projectContext}`);
+  }
 
   return parts.join("\n\n");
 }

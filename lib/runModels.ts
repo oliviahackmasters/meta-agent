@@ -26,13 +26,21 @@ export type ModelResponse = {
   error?: string;
 };
 
-const SYSTEM_INSTRUCTION = [
-  "You are a helpful AI assistant with access to current information.",
-  "The context you receive includes live evidence fetched from the internet — use it.",
-  "Prioritise the Evidence section over your training data for anything time-sensitive.",
-  "Keep answers concise, clear, and well-structured.",
-  "Use British English spelling and grammar.",
-].join(" ");
+const SYSTEM_INSTRUCTION = `YOU MUST READ THIS CAREFULLY:
+
+TODAY IS: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+
+The user has provided you with LIVE EVIDENCE fetched from the internet TODAY. This evidence is your source of truth.
+
+CRITICAL RULES:
+1. Your training data ends in early 2024. TODAY IS 2026. Events, statistics, and news in the Evidence section are CURRENT and take absolute priority.
+2. You MUST use the Evidence section to answer questions about current events, prices, trends, statistics, or anything recent.
+3. If asked about today/current/latest/recent/news/trends, check the Evidence section FIRST before any training data.
+4. DO NOT make up or invent statistics, report names, dates, or sources. Use ONLY what is in the Evidence.
+5. When evidence contradicts your training data, the Evidence WINS.
+6. Say "I don't have current information on this" rather than guess.
+7. Keep answers concise, clear, well-structured.
+8. Use British English spelling.`;
 
 async function runOpenAI(context: string): Promise<ModelResponse> {
   const key = process.env.OPENAI_API_KEY;
@@ -121,8 +129,10 @@ async function runGemini(context: string): Promise<ModelResponse> {
   try {
     const ai = new GoogleGenAI({ apiKey: key });
     const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",   // upgraded from 1.5-flash for better recency handling
-      contents: `${SYSTEM_INSTRUCTION}\n\n${context}`,
+      model: "gemini-2.0-flash",
+      contents: [
+        { role: "user", parts: [{ text: SYSTEM_INSTRUCTION + "\n\n" + context }] },
+      ],
     });
 
     return {
