@@ -255,7 +255,7 @@
 
 #hmMetaCog .hm-results-grid{
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 12px;
   margin: 0 0 14px 0;
   width: 100%;
@@ -523,15 +523,20 @@
 
     <div class="hm-row">
       <textarea id="prompt" class="hm-textarea" placeholder="Ask anything..."></textarea>
-      <button id="send" class="hm-btn">Send</button>
+      <div style="display: flex; gap: 8px;">
+        <button id="export" class="hm-btn">Export Response</button>
+        <button id="send" class="hm-btn">Send</button>
+      </div>
     </div>
   </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 <script>
 const API_ENDPOINT = "https://meta-agent-opal.vercel.app/api/meta-llm"; // update to your Vercel deployment
 const btn = document.getElementById("send");
+const exportBtn = document.getElementById("export");
 const loader = document.getElementById("hmLoader");
 const promptInput = document.getElementById("prompt");
 const statusEl = document.getElementById("hm-status");
@@ -555,6 +560,7 @@ async function ask() {
 
   busy = true;
   btn.disabled = true;
+  exportBtn.disabled = true;
   btn.textContent = "Sending...";
 
   try {
@@ -606,6 +612,7 @@ async function ask() {
   } finally {
     busy = false;
     btn.disabled = false;
+    exportBtn.disabled = false;
     btn.textContent = "SEND";
   }
 }
@@ -700,7 +707,40 @@ function renderConversation(prompt, results, combinedText, selectedProviders) {
   transcript.scrollTop = 0;
 }
 
+async function exportResponse() {
+  if (busy) return;
+  
+  try {
+    // Temporarily expand the chat to show all content
+    const originalHeight = transcript.style.height;
+    const originalOverflow = transcript.style.overflow;
+    transcript.style.height = 'auto';
+    transcript.style.overflow = 'visible';
+    
+    const canvas = await html2canvas(transcript, {
+      backgroundColor: '#000000',
+      scale: 2,
+      height: transcript.scrollHeight,
+      width: transcript.scrollWidth
+    });
+    
+    // Restore original styles
+    transcript.style.height = originalHeight;
+    transcript.style.overflow = originalOverflow;
+    
+    const link = document.createElement('a');
+    link.download = 'meta-agent-response.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  } catch (err) {
+    console.error('Export failed:', err);
+    statusEl.textContent = 'export failed';
+    setTimeout(() => statusEl.textContent = 'idle', 2000);
+  }
+}
+
 promptInput.addEventListener("input", autoResizeTextarea);
 autoResizeTextarea();
 btn.onclick = ask;
+exportBtn.onclick = exportResponse;
 </script>
