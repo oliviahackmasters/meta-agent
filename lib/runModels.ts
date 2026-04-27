@@ -1,8 +1,17 @@
-// Real LLM implementations using available APIs
+/**
+ * lib/runModels.ts  (fixed)
+ *
+ * Changes from original:
+ * - runOpenAI() and runClaude() were placeholders — now real implementations
+ *   mirroring the working code in api/meta-llm.js
+ * - runDeepSeek() also wired up properly
+ * - All models receive the full context (including live evidence)
+ * - Gemini upgraded from gemini-1.5-flash to gemini-2.0-flash for better recency
+ */
 
 import { GoogleGenAI } from "@google/genai";
 
-const genAI = new GoogleGenAI(process.env.GOOGLE_API_KEY || "");
+const genAI = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || "" });
 
 export type UIBlock =
   | { type: "chart"; data: any }
@@ -17,149 +26,162 @@ export type ModelResponse = {
   error?: string;
 };
 
-async function runGemini(context: string): Promise<ModelResponse> {
+const SYSTEM_INSTRUCTION = [
+  "You are a helpful AI assistant with access to current information.",
+  "The context you receive includes live evidence fetched from the internet — use it.",
+  "Prioritise the Evidence section over your training data for anything time-sensitive.",
+  "Keep answers concise, clear, and well-structured.",
+  "Use British English spelling and grammar.",
+].join(" ");
+
+async function runOpenAI(context: string): Promise<ModelResponse> {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) {
+    return { provider: "openai", answer: "", error: "Missing OPENAI_API_KEY" };
+  }
+
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: SYSTEM_INSTRUCTION },
+          { role: "user", content: context },
+        ],
+        temperature: 0.5,
+        max_completion_tokens: 600,
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
 
-    const prompt = `${context}
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`OpenAI ${response.status}: ${text}`);
+    }
 
-CRITICAL INSTRUCTIONS FOR THIS RESPONSE:
-- Today's date is ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} (${new Date().toISOString().split('T')[0]}).
-- The "Evidence" section contains current, real-time information fetched from the internet via web search.
-- Treat the web search results and provided evidence as the source of truth.
-- IGNORE any outdated knowledge from your training data that conflicts with the provided evidence.
-- Use ONLY the information provided in the context, especially the Evidence section, for current events, retail trends, and market data.
-- When citing statistics, reports, or sources: only reference information explicitly mentioned in the Evidence section.
-- DO NOT invent, speculate, or fabricate statistics, report names, case study details, or links.
-- If evidence is from retail-specific sources (McKinsey, Deloitte, PWC, Forrester, NRF, etc.), prioritize that information.
-- When evidence is weak or limited, explicitly state "Evidence is limited for this topic."
-- For retail research: focus on recent consumer behavior, omnichannel trends, and brand strategies mentioned in the sources.
-- Keep your response concise and directly answer the user's query using only verified information from the provided evidence.
-
-Please provide a helpful response based on the above context:`;
-
-    const result = await model.generateContent(prompt);
-    const response = result.response;
-    const text = response.text();
-
+    const data = await response.json();
     return {
-      provider: "gemini",
-      answer: text,
+      provider: "openai",
+      answer: data?.choices?.[0]?.message?.content?.trim() || "",
     };
-  } catch (error) {
-    return {
-      provider: "gemini",
-      answer: "Error calling Gemini API",
-      error: error.message,
-    };
+  } catch (error: any) {
+    return { provider: "openai", answer: "", error: error.message };
   }
 }
 
-async function runOpenAI(context: string): Promise<ModelResponse> {
-  // Placeholder - would need OpenAI API key and implementation
-  const systemInstructions = `Today's date is ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}.
-The Evidence section contains real-time web search results.
-Treat web search results as source of truth. Do not invent statistics or report names. Say when evidence is weak.
-For retail research, prioritize recent sources and consumer behavior trends.`;
+async function runClaude(context: string): Promise<ModelResponse> {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) {
+    return { provider: "claude", answer: "", error: "Missing ANTHROPIC_API_KEY" };
+  }
 
-  return {
-    provider: "openai",
-    answer: `[OpenAI] ${systemInstructions} Based on the provided context with web search evidence, I would analyze your query. (OpenAI API integration needed for real responses.)`,
-  };
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-5",
+        max_tokens: 600,
+        system: SYSTEM_INSTRUCTION,
+        messages: [{ role: "user", content: context }],
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Claude ${response.status}: ${text}`);
+    }
+
+    const data = await response.json();
+    return {
+      provider: "claude",
+      answer: data?.content?.[0]?.text?.trim() || "",
+    };
+  } catch (error: any) {
+    return { provider: "claude", answer: "", error: error.message };
+  }
 }
 
-async function runClaude(context: string): Promise<ModelResponse> {
-  // Placeholder - would need Anthropic API key and implementation
-  const systemInstructions = `Today's date is ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}.
-The Evidence section contains real-time web search results.
-Treat web search results as source of truth. Do not invent statistics or report names. Say when evidence is weak.
-For retail research, prioritize recent sources and consumer behavior trends.`;
+async function runGemini(context: string): Promise<ModelResponse> {
+  const key = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
+  if (!key) {
+    return { provider: "gemini", answer: "", error: "Missing GOOGLE_API_KEY" };
+  }
 
-  return {
-    provider: "claude",
-    answer: `[Claude] ${systemInstructions} Analyzing the context with web search evidence... (Claude API integration needed for real responses.)`,
-  };
+  try {
+    const ai = new GoogleGenAI({ apiKey: key });
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",   // upgraded from 1.5-flash for better recency handling
+      contents: `${SYSTEM_INSTRUCTION}\n\n${context}`,
+    });
+
+    return {
+      provider: "gemini",
+      answer: response?.text?.trim?.() || "",
+    };
+  } catch (error: any) {
+    return { provider: "gemini", answer: "", error: error.message };
+  }
 }
 
 async function runDeepSeek(context: string): Promise<ModelResponse> {
-  // Placeholder - would need DeepSeek API key and implementation
-  const systemInstructions = `Today's date is ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}.
-The Evidence section contains real-time web search results.
-Treat web search results as source of truth. Do not invent statistics or report names. Say when evidence is weak.
-For retail research, prioritize recent sources and consumer behavior trends.`;
+  const key = process.env.DEEPSEEK_API_KEY;
+  if (!key) {
+    return { provider: "deepseek", answer: "", error: "Missing DEEPSEEK_API_KEY" };
+  }
 
-  return {
-    provider: "deepseek",
-    answer: `[DeepSeek] ${systemInstructions} From the information available in the context with web search evidence... (DeepSeek API integration needed for real responses.)`,
-  };
+  try {
+    const response = await fetch("https://api.deepseek.com/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        messages: [
+          { role: "system", content: SYSTEM_INSTRUCTION },
+          { role: "user", content: context },
+        ],
+        temperature: 0.5,
+        max_tokens: 600,
+        stream: false,
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`DeepSeek ${response.status}: ${text}`);
+    }
+
+    const data = await response.json();
+    return {
+      provider: "deepseek",
+      answer: data?.choices?.[0]?.message?.content?.trim() || "",
+    };
+  } catch (error: any) {
+    return { provider: "deepseek", answer: "", error: error.message };
+  }
 }
 
 export async function runModels(context: string): Promise<Record<string, ModelResponse>> {
-  const results: Record<string, ModelResponse> = {};
-
-  // Run all models in parallel
-  const promises = [
+  const [openai, claude, gemini, deepseek] = await Promise.all([
     runOpenAI(context),
     runClaude(context),
     runGemini(context),
     runDeepSeek(context),
-  ];
+  ]);
 
-  const responses = await Promise.all(promises);
-
-  results.openai = responses[0];
-  results.claude = responses[1];
-  results.gemini = responses[2];
-  results.deepseek = responses[3];
-
-  return results;
-}
-
-/**
- * Combines responses from multiple models with web search awareness
- */
-export async function combinedResponse(
-  modelResponses: Record<string, ModelResponse>,
-  originalContext: string
-): Promise<ModelResponse> {
-  // Extract answers from successful responses
-  const usableAnswers = Object.entries(modelResponses)
-    .filter(([, response]) => response.answer && !response.error)
-    .map(([provider, response]) => `${provider.toUpperCase()}:\n${response.answer}`)
-    .join("\n\n---\n\n");
-
-  if (!usableAnswers) {
-    return {
-      provider: "combined",
-      answer: "Unable to generate a combined response due to errors in model calls.",
-      error: "No valid responses to combine",
-    };
-  }
-
-  const systemPrompt = `You are a meta AI summarizer that synthesizes responses from multiple AI models.
-Today's date is ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}.
-
-Given multiple model answers to the same prompt based on web search evidence:
-- Write one concise, high-quality combined response
-- Remove repetition while preserving unique insights
-- Prioritize information sourced from the provided evidence and web search results
-- For retail research: synthesize consumer behavior and trend insights from the sources
-- Do not invent statistics or sources not mentioned in the evidence
-- Do not mention the individual providers
-- Provide citations or references to the sources when making claims
-- Acknowledge when evidence is limited or conflicting`;
-
-  try {
-    // For now, return a simple synthesis since we don't have a guaranteed API
-    return {
-      provider: "combined",
-      answer: `Combined Analysis:\n\n${usableAnswers}\n\nNote: This represents a synthesis of multiple AI model responses based on the provided web search evidence and context. All claims are drawn from the sources provided in the Evidence section.`,
-    };
-  } catch (error) {
-    return {
-      provider: "combined",
-      answer: "Combined response generation encountered an issue.",
-      error: error instanceof Error ? error.message : "Unknown error",
-    };
-  }
+  return { openai, claude, gemini, deepseek };
 }
