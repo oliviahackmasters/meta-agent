@@ -1,15 +1,15 @@
 import { GoogleGenAI } from "@google/genai";
 
 const AVAILABLE_PROVIDERS = ["openai", "claude", "gemini", "deepseek", "infomaniak"];
-const DEFAULT_PROVIDERS = ["openai", "claude", "gemini"];
+const DEFAULT_PROVIDERS = ["openai"];
 
 function isScenarioPrompt(text) {
   const lower = text.toLowerCase();
-  return /\b(scenario|matrix|2x2|drivers|probability|future)\b/.test(lower);
+  return /\b(scenario|scenario planning|scenario planner|matrix|2x2|drivers|probability|future|potential futures)\b/.test(lower);
 }
 
 function augmentScenarioPrompt(text) {
-  return `This user wants a clean scenario matrix output. Identify the top drivers, select X and Y axis drivers for future uncertainty, and present a simple 2x2 matrix table with axis labels and four quadrant descriptions. Use the crossing of the drivers in each box.\n\n${text}`;
+  return `This user wants a clear scenario matrix output.\n- List the top drivers affecting the industry first.\n- Choose one driver for the X axis and one driver for the Y axis.\n- Present a 2x2 matrix as a simple table with axis labels.\n- In each of the four cells, briefly describe the crossing of the drivers in 1-2 sentences.\n- Use a plain text table layout like:\n  | X\\Y | High Y | Low Y |\n  | High X | ... | ... |\n  | Low X | ... | ... |\n- Do not use long paragraph prose, and do not produce a messy ASCII art block.\n- Keep the matrix concise, structured, and workshop-friendly.\n\n${text}`;
 }
 
 export default async function handler(req, res) {
