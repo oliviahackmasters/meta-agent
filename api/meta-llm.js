@@ -3,13 +3,13 @@ import { GoogleGenAI } from "@google/genai";
 const AVAILABLE_PROVIDERS = ["openai", "claude", "gemini", "deepseek", "infomaniak"];
 const DEFAULT_PROVIDERS = ["openai"];
 
-function isScenarioPrompt(text) {
+function wantsScenarioMatrix(text) {
   const lower = text.toLowerCase();
-  return /\b(scenario|scenario planning|scenario planner|matrix|2x2|drivers|probability|future|potential futures)\b/.test(lower);
+  return /\b(scenario|matrix|2x2|scenarios|scenario matrix|scenario planning|scenario planner)\b/.test(lower);
 }
 
 function augmentScenarioPrompt(text) {
-  return `This user wants a clear scenario matrix output.\n- List the top drivers affecting the industry first.\n- Choose one driver for the X axis and one driver for the Y axis.\n- Present a 2x2 matrix as a simple table with axis labels.\n- In each of the four cells, briefly describe the crossing of the drivers in 1-2 sentences.\n- Use a plain text table layout like:\n  | X\\Y | High Y | Low Y |\n  | High X | ... | ... |\n  | Low X | ... | ... |\n- Do not use long paragraph prose, and do not produce a messy ASCII art block.\n- Keep the matrix concise, structured, and workshop-friendly.\n\n${text}`;
+  return `The user is requesting a scenario matrix output.\n- List the top 2-3 drivers affecting the industry.\n- Choose one driver for the X axis and one driver for the Y axis.\n- Present a 2x2 matrix as a simple table with axis labels.\n- In each of the four cells, briefly describe the scenario in 1-2 sentences.\n- Use a plain text table layout like:\n  | X\\Y | High Y | Low Y |\n  | High X | ... | ... |\n  | Low X | ... | ... |\n- Each cell should include: scenario name, characteristics, and 1-2 source-backed claims.\n- Keep it concise and structured.\n\n${text}`;
 }
 
 const TAVILY_ENDPOINT = (process.env.TAVILY_ENDPOINT || "https://api.tavily.com").replace(/\/$/, "");
@@ -263,56 +263,54 @@ function formatSourcePack(sourcePack, searchMode) {
   });
 
   if (!sourcePack.length) {
-    return `Server date: ${serverDate}\nSearch mode: ${searchMode}\nNo sources were returned from Tavily.`;
+    return `Server date: ${serverDate}\nSearch mode: ${searchMode}\nNo sources available. You may provide only high-level directional analysis, clearly labeled as such.`;
   }
 
   return [
     `Server date: ${serverDate}`,
     `Search mode: ${searchMode}`,
+    `Available sources for citation:\n`,
     ...sourcePack.map((source, index) =>
-      [`Source ${index + 1}:`, `Title: ${source.title}`, `URL: ${source.url || "N/A"}`, `Published: ${source.publishedDate || "unknown"}`, `Snippet: ${source.snippet || "No snippet available."}`].join("\n")
+      [`[${index + 1}] ${source.title}\nURL: ${source.url || "N/A"}\nPublished: ${source.publishedDate || "unknown"}\nSnippet: ${source.snippet || "No snippet available."}`].join("")
     ),
   ].join("\n\n");
 }
 
-function buildModelPrompt(prompt, sourcePackPrompt, todayStr) {
-  return `TODAY IS ${todayStr}. You are a research assistant and you have been given a sourcePack from Tavily. Use it as evidence for every claim.
+function buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix) {
+  return `TODAY IS ${todayStr}. You are a research assistant with a sourcePack from Tavily.
 
 ${sourcePackPrompt}
 
-INSTRUCTIONS:
-- Answer using only the sourcePack and the user prompt.
-- Remove unsupported claims.
-- Resolve contradictions by choosing the most recent, source-backed claim.
-- Prioritise recent, source-backed evidence.
-- Cite sources as [1], [2], etc., and include URLs when referenced.
-- Flag weak evidence or insufficient support.
-- Do not invent data, dates, or sources.
-- If any section has weak evidence, explicitly say so and still answer every requested part of the query.
-- If no sources are available, state clearly that you cannot provide a reliable answer based on current evidence.
-- For strategic or directional questions (future, trends, scenarios), if sources are thin but the question requires directional analysis, you may provide high-level industry knowledge but clearly label it as "General industry knowledge (not source-backed)" and avoid specific stats, dates, or claims.
-- Use British English spelling.
+OUTPUT RULES:
+- CITATION: Use inline citation format ONLY. When citing a source, include: (Source: [N] Title, URL). Do NOT use [1], [2], etc. without URLs.
+- CLAIMS: Every factual claim must be backed by a source from the sourcePack. If unsupported, omit it or label as conjecture.
+- FORMAT: Provide a structured answer with themes/insights. Do not force frameworks.
+- SCENARIO MATRIX: ${wantsScenarioMatrix ? "You may generate a 2x2 scenario matrix with drivers, axis labels, and source-backed claims in each cell." : "Do NOT generate a scenario matrix. Provide thematic analysis only with key insights, drivers, and challenges."}
+- WEAK SOURCES: If sources are limited, keep answers concise and qualified. Explicitly state uncertainty. Do NOT expand into elaborate frameworks.
+- NO INVENTION: Do not invent data, dates, statistics, or sources.
+- DIRECTIONAL ONLY: If no strong sources exist, you may provide high-level directional analysis clearly labeled as "General industry knowledge (not source-backed)" without specific claims.
+- STRUCTURE: Use clear headings, numbered points, and source citations inline.
+- LANGUAGE: Use British English spelling.
 
 User query:
 ${prompt}`;
 }
 
-function buildCombinedPrompt(prompt, sourcePackPrompt, todayStr) {
-  return `TODAY IS ${todayStr}. You are a research editor combining multiple model outputs with a shared sourcePack.
+function buildCombinedPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix) {
+  return `TODAY IS ${todayStr}. You are a research editor combining multiple model outputs into a final answer.
 
 ${sourcePackPrompt}
 
-EDITOR INSTRUCTIONS:
-- If ALL model responses indicate insufficient evidence or no sources found, DO NOT generate a full answer. Instead, return only: "No sufficient sources found to answer this reliably. Suggest improving the query or running deeper research."
-- Remove unsupported claims from model outputs.
-- Resolve contradictions using the most recent source-backed evidence.
-- Prioritise recent and well-supported claims.
-- Cite or link sources wherever possible.
-- Flag weak evidence and note where sources are insufficient.
-- Keep the answer concise, clear, and research-forward.
-- Summarise the strongest findings at the top.
-- Use British English spelling.
-- For strategic or directional questions with thin sources, you may provide high-level industry knowledge but clearly label it as "General industry knowledge (not source-backed)" and avoid specific stats, dates, or claims.
+FINAL OUTPUT RULES:
+- INSUFFICIENT EVIDENCE: If all models indicate insufficient evidence or no sources, return: "No sufficient sources found. To answer reliably, improve the query or run deeper research."
+- FOLLOW INTENT: Do not introduce structures (e.g., scenario matrix) unless explicitly requested.
+- CITATION ONLY: All claims must be source-backed with inline citations: (Source: [N] Title, URL). Remove unsourced claims.
+- CONFLICTS: If models disagree, prioritise source-backed claims. Flag disagreements with reasoning.
+- MATRIX: ${wantsScenarioMatrix ? "You may present a 2x2 scenario matrix with source-backed claims in each cell." : "Do NOT generate a scenario matrix unless requested. Provide thematic analysis instead."}
+- WEAK SOURCES: If sources are thin, keep answers concise and qualified. Clearly state uncertainty. Do not pad with generic frameworks.
+- DIRECTIONAL: For strategic questions with no strong sources, provide only high-level directional analysis labeled "General industry knowledge (not source-backed)" with no specific claims.
+- STRUCTURE: Use headings, numbered points, and clear formatting. Summarise strongest findings first.
+- LANGUAGE: Use British English spelling.
 
 User query:
 ${prompt}`;
@@ -412,10 +410,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Missing prompt" });
     }
 
-    if (isScenarioPrompt(prompt)) {
-      prompt = augmentScenarioPrompt(prompt);
-    }
-
+    const wantsScenarioMatrix = wantsScenarioMatrix(prompt);
     const researchMode = classifyResearchMode(prompt);
     const { query: tavilyQuery, searchMode } = buildTavilySearchQuery(prompt);
     let tavilyData = null;
@@ -504,11 +499,11 @@ export default async function handler(req, res) {
     }
 
     const providerRunners = {
-      openai: (p) => runOpenAI(p, sourcePackPrompt),
-      claude: (p) => runClaude(p, sourcePackPrompt),
-      gemini: (p) => runGemini(p, sourcePackPrompt),
-      deepseek: (p) => runDeepSeek(p, sourcePackPrompt),
-      infomaniak: (p) => runInfomaniak(p, sourcePackPrompt),
+      openai: (p) => runOpenAI(p, sourcePackPrompt, wantsScenarioMatrix),
+      claude: (p) => runClaude(p, sourcePackPrompt, wantsScenarioMatrix),
+      gemini: (p) => runGemini(p, sourcePackPrompt, wantsScenarioMatrix),
+      deepseek: (p) => runDeepSeek(p, sourcePackPrompt, wantsScenarioMatrix),
+      infomaniak: (p) => runInfomaniak(p, sourcePackPrompt, wantsScenarioMatrix),
     };
 
     const settled = await Promise.allSettled(
@@ -528,7 +523,7 @@ export default async function handler(req, res) {
       };
     });
 
-    const combined = await runCombined(results, prompt, sourcePackPrompt);
+    const combined = await runCombined(results, prompt, sourcePackPrompt, wantsScenarioMatrix);
 
     return res.status(200).json({
       prompt,
@@ -554,7 +549,7 @@ export default async function handler(req, res) {
   }
 }
 
-async function runOpenAI(prompt, sourcePackPrompt) {
+async function runOpenAI(prompt, sourcePackPrompt, wantsScenarioMatrix) {
   const key = process.env.OPENAI_API_KEY;
   if (!key) {
     const err = new Error("Missing OPENAI_API_KEY");
@@ -563,7 +558,7 @@ async function runOpenAI(prompt, sourcePackPrompt) {
   }
 
   const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr);
+  const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix);
 
   const r = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -597,7 +592,7 @@ async function runOpenAI(prompt, sourcePackPrompt) {
   };
 }
 
-async function runClaude(prompt, sourcePackPrompt) {
+async function runClaude(prompt, sourcePackPrompt, wantsScenarioMatrix) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) {
     const err = new Error("Missing ANTHROPIC_API_KEY");
@@ -606,7 +601,7 @@ async function runClaude(prompt, sourcePackPrompt) {
   }
 
   const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr);
+  const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix);
 
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -638,7 +633,7 @@ async function runClaude(prompt, sourcePackPrompt) {
   };
 }
 
-async function runGemini(prompt, sourcePackPrompt) {
+async function runGemini(prompt, sourcePackPrompt, wantsScenarioMatrix) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) {
     const err = new Error("Missing GEMINI_API_KEY");
@@ -648,7 +643,7 @@ async function runGemini(prompt, sourcePackPrompt) {
 
   try {
     const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-    const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr);
+    const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix);
     
     const ai = new GoogleGenAI({ apiKey: key });
 
@@ -668,7 +663,7 @@ async function runGemini(prompt, sourcePackPrompt) {
   }
 }
 
-async function runDeepSeek(prompt, sourcePackPrompt) {
+async function runDeepSeek(prompt, sourcePackPrompt, wantsScenarioMatrix) {
   const key = process.env.DEEPSEEK_API_KEY;
   if (!key) {
     const err = new Error("Missing DEEPSEEK_API_KEY");
@@ -677,7 +672,7 @@ async function runDeepSeek(prompt, sourcePackPrompt) {
   }
 
   const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr);
+  const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix);
 
   const r = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
@@ -712,7 +707,7 @@ async function runDeepSeek(prompt, sourcePackPrompt) {
   };
 }
 
-async function runInfomaniak(prompt, sourcePackPrompt) {
+async function runInfomaniak(prompt, sourcePackPrompt, wantsScenarioMatrix) {
   const token = process.env.INFOMANIAK_API_TOKEN;
   const productId = process.env.INFOMANIAK_PRODUCT_ID;
   const model = process.env.INFOMANIAK_MODEL || "qwen3";
@@ -730,7 +725,7 @@ async function runInfomaniak(prompt, sourcePackPrompt) {
   }
 
   const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr);
+  const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix);
 
   const r = await fetch(
     `https://api.infomaniak.com/2/ai/${productId}/openai/v1/chat/completions`,
@@ -767,7 +762,7 @@ async function runInfomaniak(prompt, sourcePackPrompt) {
   };
 }
 
-async function runCombined(results, prompt, sourcePackPrompt) {
+async function runCombined(results, prompt, sourcePackPrompt, wantsScenarioMatrix) {
   const key = process.env.OPENAI_API_KEY;
 
   if (!key) {
@@ -790,7 +785,7 @@ async function runCombined(results, prompt, sourcePackPrompt) {
   }
 
   const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const systemPrompt = buildCombinedPrompt(prompt, sourcePackPrompt, todayStr);
+  const systemPrompt = buildCombinedPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix);
 
   const r = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
