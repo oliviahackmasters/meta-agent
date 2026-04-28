@@ -376,7 +376,7 @@ async function tavilySearch(query, options = {}) {
 async function tavilyResearch(query, options = {}) {
   return await tavilyFetch("search", {
     query: truncateQuery(query),
-    topic: "research",
+    topic: "general",
     search_depth: "advanced",
     max_results: 10,
     auto_parameters: true,
