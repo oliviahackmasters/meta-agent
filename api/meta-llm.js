@@ -72,7 +72,7 @@ const RETAIL_SEARCH_CONFIG = [
 function classifyResearchMode(input) {
   const lower = input.toLowerCase();
   const extractPattern = /https?:\/\/|www\.|\b(extract|summarize these urls|from these urls|from these links|url:|urls:)\b/;
-  const researchPattern = /\b(research|analyse|analyze|investigate|study|deep dive|explore|benchmark|report|insights|analysis)\b/;
+  const researchPattern = /\b(research|analyse|analyze|investigate|study|deep dive|explore|benchmark|report|insights|analysis|future|trends|drivers|scenario|industry)\b/;
   const searchPattern = /\b(search|find|lookup|latest|current|today|recent|news|trend|trends|prices|forecast|update)\b/;
 
   if (extractPattern.test(lower)) return "extract";
@@ -106,6 +106,30 @@ function isRetailRelated(input) {
 
 function truncateQuery(query, maxLength = 400) {
   return query.length > maxLength ? query.substring(0, maxLength - 3) + "..." : query;
+}
+
+function rewriteQuery(query) {
+  const lower = query.toLowerCase();
+  const rewrites = [
+    `${query} retail trends report`,
+    `${query} department stores analysis 2025 2026`,
+    `future of department stores industry report`,
+    `department stores decline or growth statistics`,
+    `case studies department store strategy retail`
+  ];
+
+  // Add specific rewrites based on keywords
+  if (lower.includes("department store")) {
+    rewrites.push(`${query} retail industry outlook`);
+    rewrites.push(`${query} store closures and openings data`);
+  }
+
+  if (lower.includes("future")) {
+    rewrites.push(`${query} 2026 predictions`);
+    rewrites.push(`${query} emerging trends`);
+  }
+
+  return rewrites.slice(0, 5); // Limit to 5 rewrites
 }
 
 function generateTavilySubQueries(input, searchMode) {
@@ -265,6 +289,8 @@ INSTRUCTIONS:
 - Flag weak evidence or insufficient support.
 - Do not invent data, dates, or sources.
 - If any section has weak evidence, explicitly say so and still answer every requested part of the query.
+- If no sources are available, state clearly that you cannot provide a reliable answer based on current evidence.
+- For strategic or directional questions (future, trends, scenarios), if sources are thin but the question requires directional analysis, you may provide high-level industry knowledge but clearly label it as "General industry knowledge (not source-backed)" and avoid specific stats, dates, or claims.
 - Use British English spelling.
 
 User query:
@@ -277,6 +303,7 @@ function buildCombinedPrompt(prompt, sourcePackPrompt, todayStr) {
 ${sourcePackPrompt}
 
 EDITOR INSTRUCTIONS:
+- If ALL model responses indicate insufficient evidence or no sources found, DO NOT generate a full answer. Instead, return only: "No sufficient sources found to answer this reliably. Suggest improving the query or running deeper research."
 - Remove unsupported claims from model outputs.
 - Resolve contradictions using the most recent source-backed evidence.
 - Prioritise recent and well-supported claims.
@@ -285,6 +312,7 @@ EDITOR INSTRUCTIONS:
 - Keep the answer concise, clear, and research-forward.
 - Summarise the strongest findings at the top.
 - Use British English spelling.
+- For strategic or directional questions with thin sources, you may provide high-level industry knowledge but clearly label it as "General industry knowledge (not source-backed)" and avoid specific stats, dates, or claims.
 
 User query:
 ${prompt}`;
@@ -395,6 +423,15 @@ export default async function handler(req, res) {
 
     if (researchMode === "search") {
       sourceItems = await runTavilySearchSubQueries(tavilyQuery, searchMode);
+      // Fallback: if no results, try rewritten queries
+      if (sourceItems.length === 0) {
+        const rewrittenQueries = rewriteQuery(prompt);
+        for (const rewritten of rewrittenQueries) {
+          const fallbackItems = await runTavilySearchSubQueries(rewritten, searchMode);
+          sourceItems = [...sourceItems, ...fallbackItems];
+          if (sourceItems.length > 0) break; // Stop after first successful fallback
+        }
+      }
     } else if (researchMode === "research") {
       const [searchItems, researchResult] = await Promise.all([
         runTavilySearchSubQueries(tavilyQuery, searchMode),
@@ -410,6 +447,27 @@ export default async function handler(req, res) {
           snippet: researchResult.summary,
         });
       }
+      // Fallback for research mode
+      if (sourceItems.length === 0) {
+        const rewrittenQueries = rewriteQuery(prompt);
+        for (const rewritten of rewrittenQueries) {
+          const [fallbackSearch, fallbackResearch] = await Promise.all([
+            runTavilySearchSubQueries(rewritten, searchMode),
+            tavilyResearch(rewritten),
+          ]);
+          const fallbackResearchItems = fallbackResearch?.results || fallbackResearch?.items || [];
+          sourceItems = [...sourceItems, ...fallbackSearch, ...fallbackResearchItems];
+          if (fallbackResearch?.summary) {
+            sourceItems.unshift({
+              title: "Tavily research summary",
+              url: "",
+              publishedDate: "",
+              snippet: fallbackResearch.summary,
+            });
+          }
+          if (sourceItems.length > 0) break;
+        }
+      }
     } else if (researchMode === "extract") {
       const urls = parseUrls(prompt);
       if (!urls.length) {
@@ -420,6 +478,9 @@ export default async function handler(req, res) {
       tavilyData = await tavilyExtract(urls);
       sourceItems = tavilyData?.extracts || tavilyData?.results || tavilyData?.items || [];
     }
+
+    // If still no sources after fallbacks, set status
+    const hasSources = sourceItems.length > 0;
 
     const mergedSources = mergeDeduplicateRankSources(sourceItems);
     const sourcePack = normalizeSourceItems(mergedSources, researchMode === "none" ? "none" : searchMode);
@@ -478,8 +539,10 @@ export default async function handler(req, res) {
       results,
       combined,
       sourcePack,
+      status: hasSources ? "success" : "no_sources",
       meta: {
         timestamp: new Date().toISOString(),
+        hasSources,
       },
     });
   } catch (err) {
