@@ -249,7 +249,12 @@ async function runTavilySearchSubQueries(input, searchMode) {
 
   const responses = await Promise.all(
     subQueries.map((query) =>
-      tavilySearch(query, baseOptions).then((res) => res?.results || res?.items || [])
+      tavilySearch(query, baseOptions)
+        .then((res) => res?.results || res?.items || [])
+        .catch((err) => {
+          console.warn("Tavily subquery failed", query, err?.message || err);
+          return [];
+        })
     )
   );
 
@@ -300,14 +305,15 @@ function formatSourcePack(sourcePack, searchMode) {
   ].join("\n\n");
 }
 
-function buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix) {
+function buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix, conversationHistory = "") {
   return `TODAY IS ${todayStr}. You are a research assistant with a sourcePack from Tavily.
 
 ${sourcePackPrompt}
 
 OUTPUT RULES:
+- This is a new query. Use only the current source pack for evidence. Do not rely on previous source packs or previous sourced claims unless the user explicitly asks to continue from them.
 - CITATION: Use inline citation format ONLY. When citing a source, include: (Source: [N] Title, URL). Do NOT use [1], [2], etc. without URLs.
-- CLAIMS: Every factual claim must be backed by a source from the sourcePack. If unsupported, omit it or label as conjecture.
+- CLAIMS: Every factual claim must be backed by a source from the sourcePack. If unsupported, omit it or label it as conjecture.
 - FORMAT: Provide a structured answer with themes/insights. Do not force frameworks.
 - SCENARIO MATRIX: ${wantsScenarioMatrix ? "You may generate a 2x2 scenario matrix with drivers, axis labels, and source-backed claims in each cell." : "Do NOT generate a scenario matrix. Provide thematic analysis only with key insights, drivers, and challenges."}
 - WEAK SOURCES: If sources are limited, keep answers concise and qualified. Explicitly state uncertainty. Do NOT expand into elaborate frameworks.
@@ -316,6 +322,7 @@ OUTPUT RULES:
 - STRUCTURE: Use clear headings, numbered points, and source citations inline.
 - LANGUAGE: Use British English spelling.
 
+${conversationHistory ? `Conversation history:\n${conversationHistory}\n\n` : ""}
 User query:
 ${prompt}`;
 }
@@ -326,6 +333,7 @@ function buildCombinedPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMa
 ${sourcePackPrompt}
 
 FINAL OUTPUT RULES:
+- This is a new query. Use only the current source pack for evidence. Do not rely on previous source packs or previous sourced claims unless the user explicitly asks to continue from them.
 - INSUFFICIENT EVIDENCE: If all models indicate insufficient evidence or no sources, return: "No sufficient sources found. To answer reliably, improve the query or run deeper research."
 - FOLLOW INTENT: Do not introduce structures (e.g., scenario matrix) unless explicitly requested.
 - CITATION ONLY: All claims must be source-backed with inline citations: (Source: [N] Title, URL). Remove unsourced claims.
@@ -428,15 +436,31 @@ export default async function handler(req, res) {
   }
 
   try {
-    let prompt = req.body?.prompt?.toString?.().trim();
+    const messages = Array.isArray(req.body?.messages)
+      ? req.body.messages.filter((m) => m && typeof m.content === "string")
+      : [];
 
-    if (!prompt) {
-      return res.status(400).json({ error: "Missing prompt" });
+    const latestUserMessage = messages
+      .slice()
+      .reverse()
+      .find((m) => String(m.role || "").toLowerCase() === "user")
+      ?.content?.toString?.().trim();
+
+    const rawPrompt = latestUserMessage || req.body?.prompt?.toString?.trim();
+
+    if (!rawPrompt) {
+      return res.status(400).json({ error: "Missing prompt or user message" });
     }
 
-    const shouldGenerateMatrix = wantsScenarioMatrix(prompt);
-    const researchMode = classifyResearchMode(prompt);
-    const { query: tavilyQuery, searchMode } = buildTavilySearchQuery(prompt);
+    const conversationHistory = messages.length
+      ? messages.map((m) => `${m.role}: ${m.content}`).join("\n")
+      : "";
+
+    const userPrompt = rawPrompt;
+    const prompt = isScenarioPrompt(userPrompt) ? augmentScenarioPrompt(userPrompt) : userPrompt;
+    const shouldGenerateMatrix = wantsScenarioMatrix(userPrompt);
+    const researchMode = classifyResearchMode(userPrompt);
+    const { query: tavilyQuery, searchMode } = buildTavilySearchQuery(userPrompt);
     let tavilyData = null;
     let sourceItems = [];
 
@@ -444,7 +468,7 @@ export default async function handler(req, res) {
       sourceItems = await runTavilySearchSubQueries(tavilyQuery, searchMode);
       // Fallback: if no results, try rewritten queries
       if (sourceItems.length === 0) {
-        const rewrittenQueries = rewriteQuery(prompt);
+        const rewrittenQueries = rewriteQuery(userPrompt);
         for (const rewritten of rewrittenQueries) {
           const fallbackItems = await runTavilySearchSubQueries(rewritten, searchMode);
           sourceItems = [...sourceItems, ...fallbackItems];
@@ -454,7 +478,10 @@ export default async function handler(req, res) {
     } else if (researchMode === "research") {
       const [searchItems, researchResult] = await Promise.all([
         runTavilySearchSubQueries(tavilyQuery, searchMode),
-        tavilyResearch(tavilyQuery),
+        tavilyResearch(tavilyQuery).catch((err) => {
+          console.warn("Tavily research failed", err?.message || err);
+          return null;
+        }),
       ]);
       const researchItems = researchResult?.results || researchResult?.items || [];
       sourceItems = [...searchItems, ...researchItems];
@@ -468,11 +495,14 @@ export default async function handler(req, res) {
       }
       // Fallback for research mode
       if (sourceItems.length === 0) {
-        const rewrittenQueries = rewriteQuery(prompt);
+        const rewrittenQueries = rewriteQuery(userPrompt);
         for (const rewritten of rewrittenQueries) {
           const [fallbackSearch, fallbackResearch] = await Promise.all([
             runTavilySearchSubQueries(rewritten, searchMode),
-            tavilyResearch(rewritten),
+            tavilyResearch(rewritten).catch((err) => {
+              console.warn("Tavily fallback research failed", err?.message || err);
+              return null;
+            }),
           ]);
           const fallbackResearchItems = fallbackResearch?.results || fallbackResearch?.items || [];
           sourceItems = [...sourceItems, ...fallbackSearch, ...fallbackResearchItems];
@@ -488,7 +518,7 @@ export default async function handler(req, res) {
         }
       }
     } else if (researchMode === "extract") {
-      const urls = parseUrls(prompt);
+      const urls = parseUrls(userPrompt);
       if (!urls.length) {
         return res.status(400).json({
           error: "Extract mode requires one or more URLs in the user prompt.",
@@ -522,12 +552,20 @@ export default async function handler(req, res) {
       });
     }
 
+    console.log({
+      latestUserMessage: userPrompt,
+      sourcePackLength: sourcePack.length,
+      messageCount: messages.length,
+      researchMode,
+      searchMode,
+    });
+
     const providerRunners = {
-      openai: (p) => runOpenAI(p, sourcePackPrompt, shouldGenerateMatrix, researchMode),
-      claude: (p) => runClaude(p, sourcePackPrompt, shouldGenerateMatrix, researchMode),
-      gemini: (p) => runGemini(p, sourcePackPrompt, shouldGenerateMatrix, researchMode),
-      deepseek: (p) => runDeepSeek(p, sourcePackPrompt, shouldGenerateMatrix, researchMode),
-      infomaniak: (p) => runInfomaniak(p, sourcePackPrompt, shouldGenerateMatrix, researchMode),
+      openai: (p) => runOpenAI(p, sourcePackPrompt, shouldGenerateMatrix, researchMode, conversationHistory),
+      claude: (p) => runClaude(p, sourcePackPrompt, shouldGenerateMatrix, researchMode, conversationHistory),
+      gemini: (p) => runGemini(p, sourcePackPrompt, shouldGenerateMatrix, researchMode, conversationHistory),
+      deepseek: (p) => runDeepSeek(p, sourcePackPrompt, shouldGenerateMatrix, researchMode, conversationHistory),
+      infomaniak: (p) => runInfomaniak(p, sourcePackPrompt, shouldGenerateMatrix, researchMode, conversationHistory),
     };
 
     const settled = await Promise.allSettled(
@@ -547,9 +585,11 @@ export default async function handler(req, res) {
       };
     });
 
-    const combined = await runCombined(results, prompt, sourcePackPrompt, shouldGenerateMatrix, researchMode);
+    const combined = await runCombined(results, userPrompt, sourcePackPrompt, shouldGenerateMatrix, researchMode);
 
     return res.status(200).json({
+      latestUserMessage: userPrompt,
+      messages,
       prompt,
       researchMode,
       searchMode,
@@ -573,7 +613,7 @@ export default async function handler(req, res) {
   }
 }
 
-async function runOpenAI(prompt, sourcePackPrompt, wantsScenarioMatrix, researchMode) {
+async function runOpenAI(prompt, sourcePackPrompt, wantsScenarioMatrix, researchMode, conversationHistory) {
   const key = process.env.OPENAI_API_KEY;
   if (!key) {
     const err = new Error("Missing OPENAI_API_KEY");
@@ -582,7 +622,7 @@ async function runOpenAI(prompt, sourcePackPrompt, wantsScenarioMatrix, research
   }
 
   const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix);
+  const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix, conversationHistory);
   const maxTokens = getTokenLimit(researchMode);
   const temperature = getTemperature(researchMode);
 
@@ -618,7 +658,7 @@ async function runOpenAI(prompt, sourcePackPrompt, wantsScenarioMatrix, research
   };
 }
 
-async function runClaude(prompt, sourcePackPrompt, wantsScenarioMatrix, researchMode) {
+async function runClaude(prompt, sourcePackPrompt, wantsScenarioMatrix, researchMode, conversationHistory) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) {
     const err = new Error("Missing ANTHROPIC_API_KEY");
@@ -627,7 +667,7 @@ async function runClaude(prompt, sourcePackPrompt, wantsScenarioMatrix, research
   }
 
   const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix);
+  const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix, conversationHistory);
   const maxTokens = getTokenLimit(researchMode);
 
   const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -660,7 +700,7 @@ async function runClaude(prompt, sourcePackPrompt, wantsScenarioMatrix, research
   };
 }
 
-async function runGemini(prompt, sourcePackPrompt, wantsScenarioMatrix, researchMode) {
+async function runGemini(prompt, sourcePackPrompt, wantsScenarioMatrix, researchMode, conversationHistory) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) {
     const err = new Error("Missing GEMINI_API_KEY");
@@ -670,7 +710,7 @@ async function runGemini(prompt, sourcePackPrompt, wantsScenarioMatrix, research
 
   try {
     const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-    const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix);
+    const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix, conversationHistory);
     const maxTokens = getTokenLimit(researchMode);
     
     const ai = new GoogleGenAI({ apiKey: key });
@@ -691,7 +731,7 @@ async function runGemini(prompt, sourcePackPrompt, wantsScenarioMatrix, research
   }
 }
 
-async function runDeepSeek(prompt, sourcePackPrompt, wantsScenarioMatrix, researchMode) {
+async function runDeepSeek(prompt, sourcePackPrompt, wantsScenarioMatrix, researchMode, conversationHistory) {
   const key = process.env.DEEPSEEK_API_KEY;
   if (!key) {
     const err = new Error("Missing DEEPSEEK_API_KEY");
@@ -700,7 +740,7 @@ async function runDeepSeek(prompt, sourcePackPrompt, wantsScenarioMatrix, resear
   }
 
   const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix);
+  const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix, conversationHistory);
   const maxTokens = getTokenLimit(researchMode);
   const temperature = getTemperature(researchMode);
 
@@ -737,7 +777,7 @@ async function runDeepSeek(prompt, sourcePackPrompt, wantsScenarioMatrix, resear
   };
 }
 
-async function runInfomaniak(prompt, sourcePackPrompt, wantsScenarioMatrix, researchMode) {
+async function runInfomaniak(prompt, sourcePackPrompt, wantsScenarioMatrix, researchMode, conversationHistory) {
   const token = process.env.INFOMANIAK_API_TOKEN;
   const productId = process.env.INFOMANIAK_PRODUCT_ID;
   const model = process.env.INFOMANIAK_MODEL || "qwen3";
@@ -755,7 +795,7 @@ async function runInfomaniak(prompt, sourcePackPrompt, wantsScenarioMatrix, rese
   }
 
   const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix);
+  const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix, conversationHistory);
   const maxTokens = getTokenLimit(researchMode);
   const temperature = getTemperature(researchMode);
 
