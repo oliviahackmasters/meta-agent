@@ -410,7 +410,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Missing prompt" });
     }
 
-    const wantsScenarioMatrix = wantsScenarioMatrix(prompt);
+    const shouldGenerateMatrix = wantsScenarioMatrix(prompt);
     const researchMode = classifyResearchMode(prompt);
     const { query: tavilyQuery, searchMode } = buildTavilySearchQuery(prompt);
     let tavilyData = null;
@@ -499,11 +499,11 @@ export default async function handler(req, res) {
     }
 
     const providerRunners = {
-      openai: (p) => runOpenAI(p, sourcePackPrompt, wantsScenarioMatrix),
-      claude: (p) => runClaude(p, sourcePackPrompt, wantsScenarioMatrix),
-      gemini: (p) => runGemini(p, sourcePackPrompt, wantsScenarioMatrix),
-      deepseek: (p) => runDeepSeek(p, sourcePackPrompt, wantsScenarioMatrix),
-      infomaniak: (p) => runInfomaniak(p, sourcePackPrompt, wantsScenarioMatrix),
+      openai: (p) => runOpenAI(p, sourcePackPrompt, shouldGenerateMatrix),
+      claude: (p) => runClaude(p, sourcePackPrompt, shouldGenerateMatrix),
+      gemini: (p) => runGemini(p, sourcePackPrompt, shouldGenerateMatrix),
+      deepseek: (p) => runDeepSeek(p, sourcePackPrompt, shouldGenerateMatrix),
+      infomaniak: (p) => runInfomaniak(p, sourcePackPrompt, shouldGenerateMatrix),
     };
 
     const settled = await Promise.allSettled(
@@ -523,7 +523,7 @@ export default async function handler(req, res) {
       };
     });
 
-    const combined = await runCombined(results, prompt, sourcePackPrompt, wantsScenarioMatrix);
+    const combined = await runCombined(results, prompt, sourcePackPrompt, shouldGenerateMatrix);
 
     return res.status(200).json({
       prompt,
