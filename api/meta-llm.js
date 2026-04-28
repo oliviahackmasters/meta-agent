@@ -92,7 +92,7 @@ function buildTavilySearchQuery(input) {
   const domainHint = domains.length ? `\nPreferred sources: ${domains.join(", ")}.` : "";
 
   const query = `Research query: ${input}${expansions ? `\nFocus on: ${expansions}.` : ""}${domainHint}`;
-  return { query, searchMode };
+  return { query: query.substring(0, 400), searchMode };
 }
 
 const NEWS_DOMAIN_FILTERS = ["reuters.com", "apnews.com", "bbc.com", "nytimes.com"];
@@ -104,19 +104,24 @@ function isRetailRelated(input) {
   return /\b(retail|brand|brands|shopper|consumer|ecommerce|fashion|beauty|grocery|luxury|store|stores|shopping)\b/.test(lower);
 }
 
+function truncateQuery(query, maxLength = 400) {
+  return query.length > maxLength ? query.substring(0, maxLength - 3) + "..." : query;
+}
+
 function generateTavilySubQueries(input, searchMode) {
+  const truncatedInput = input.substring(0, 200);
   const queries = [
-    `Latest headlines for ${input}`,
-    `US headlines for ${input}`,
+    truncateQuery(`Latest headlines for ${truncatedInput}`),
+    truncateQuery(`US headlines for ${truncatedInput}`),
   ];
 
   if (searchMode === "news" || isRetailRelated(input)) {
-    queries.push(`UK retail news for ${input}`);
+    queries.push(truncateQuery(`UK retail news for ${truncatedInput}`));
   }
 
   if (isRetailRelated(input)) {
     for (const brand of BRAND_QUERIES) {
-      queries.push(`News and retail strategy for ${brand} related to ${input}`);
+      queries.push(truncateQuery(`News and retail strategy for ${brand} related to ${truncatedInput}`));
     }
   }
 
@@ -331,7 +336,7 @@ async function tavilyFetch(endpoint, payload) {
 
 async function tavilySearch(query, options = {}) {
   return await tavilyFetch("search", {
-    query,
+    query: truncateQuery(query),
     topic: "general",
     search_depth: "advanced",
     max_results: 10,
@@ -342,7 +347,7 @@ async function tavilySearch(query, options = {}) {
 
 async function tavilyResearch(query, options = {}) {
   return await tavilyFetch("search", {
-    query,
+    query: truncateQuery(query),
     topic: "research",
     search_depth: "advanced",
     max_results: 10,
