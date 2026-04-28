@@ -12,8 +12,9 @@ function augmentScenarioPrompt(text) {
   return `This user wants a clear scenario matrix output.\n- List the top drivers affecting the industry first.\n- Choose one driver for the X axis and one driver for the Y axis.\n- Present a 2x2 matrix as a simple table with axis labels.\n- In each of the four cells, briefly describe the crossing of the drivers in 1-2 sentences.\n- Use a plain text table layout like:\n  | X\\Y | High Y | Low Y |\n  | High X | ... | ... |\n  | Low X | ... | ... |\n- Do not use long paragraph prose, and do not produce a messy ASCII art block.\n- Keep the matrix concise, structured, and workshop-friendly.\n\n${text}`;
 }
 
-const TAVILY_ENDPOINT = "https://api.tavily.com";
+const TAVILY_ENDPOINT = (process.env.TAVILY_ENDPOINT || "https://api.tavily.com").replace(/\/$/, "");
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
+const TAVILY_PROJECT_ID = process.env.TAVILY_PROJECT_ID;
 
 const RETAIL_SEARCH_CONFIG = [
   {
@@ -289,22 +290,43 @@ async function tavilyFetch(endpoint, payload) {
     throw new Error("Missing TAVILY_API_KEY");
   }
 
-  const response = await fetch(`${TAVILY_ENDPOINT}/${endpoint}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${TAVILY_API_KEY}`,
-    },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(20000),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Tavily ${endpoint} error: ${response.status} ${text}`);
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${TAVILY_API_KEY}`,
+  };
+  if (TAVILY_PROJECT_ID) {
+    headers["X-Project-ID"] = TAVILY_PROJECT_ID;
   }
 
-  return await response.json();
+  async function attemptFetch(url) {
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(20000),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      const err = new Error(`Tavily ${endpoint} error: ${response.status} ${text}`);
+      err.status = response.status;
+      err.url = url;
+      throw err;
+    }
+
+    return await response.json();
+  }
+
+  const primaryUrl = `${TAVILY_ENDPOINT}/${endpoint}`;
+  try {
+    return await attemptFetch(primaryUrl);
+  } catch (err) {
+    if (err.status === 404) {
+      const fallbackUrl = `${TAVILY_ENDPOINT}/v1/${endpoint}`;
+      return await attemptFetch(fallbackUrl);
+    }
+    throw err;
+  }
 }
 
 async function tavilySearch(query, options = {}) {
