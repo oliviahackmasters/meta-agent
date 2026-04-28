@@ -12,7 +12,7 @@ function augmentScenarioPrompt(text) {
   return `This user wants a clear scenario matrix output.\n- List the top drivers affecting the industry first.\n- Choose one driver for the X axis and one driver for the Y axis.\n- Present a 2x2 matrix as a simple table with axis labels.\n- In each of the four cells, briefly describe the crossing of the drivers in 1-2 sentences.\n- Use a plain text table layout like:\n  | X\\Y | High Y | Low Y |\n  | High X | ... | ... |\n  | Low X | ... | ... |\n- Do not use long paragraph prose, and do not produce a messy ASCII art block.\n- Keep the matrix concise, structured, and workshop-friendly.\n\n${text}`;
 }
 
-const TAVILY_ENDPOINT = "https://api.tavily.com/v1";
+const TAVILY_ENDPOINT = "https://api.tavily.com";
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
 
 const RETAIL_SEARCH_CONFIG = [
@@ -199,15 +199,30 @@ async function tavilyFetch(endpoint, payload) {
 }
 
 async function tavilySearch(query) {
-  return await tavilyFetch("search", { query });
+  return await tavilyFetch("search", {
+    query,
+    topic: "general",
+    search_depth: "fast",
+    auto_parameters: true,
+  });
 }
 
 async function tavilyResearch(query) {
-  return await tavilyFetch("research", { query });
+  return await tavilyFetch("search", {
+    query,
+    topic: "research",
+    search_depth: "advanced",
+    auto_parameters: true,
+    include_answer: true,
+    include_raw_content: false,
+  });
 }
 
 async function tavilyExtract(urls) {
-  return await tavilyFetch("extract", { urls });
+  return await tavilyFetch("extract", {
+    url: Array.isArray(urls) ? urls : [urls],
+    depth: "basic",
+  });
 }
 
 export default async function handler(req, res) {
