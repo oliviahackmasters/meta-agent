@@ -99,6 +99,30 @@ const NEWS_DOMAIN_FILTERS = ["reuters.com", "apnews.com", "bbc.com", "nytimes.co
 const RETAIL_DOMAIN_FILTERS = ["retaildive.com", "voguebusiness.com", "ft.com", "businessoffashion.com"];
 const BRAND_QUERIES = ["Zara", "Nike", "Amazon"];
 
+function getTokenLimit(researchMode) {
+  switch (researchMode) {
+    case "research":
+      return 800; // Deep research needs more tokens
+    case "search":
+      return 350; // News/search moderate
+    case "extract":
+      return 400; // URL extraction
+    default:
+      return 250; // Concise answers by default
+  }
+}
+
+function getTemperature(researchMode) {
+  switch (researchMode) {
+    case "research":
+      return 0.5; // Lower temp for research consistency
+    case "extract":
+      return 0.3; // Very low for extraction accuracy
+    default:
+      return 0.7; // Default
+  }
+}
+
 function isRetailRelated(input) {
   const lower = input.toLowerCase();
   return /\b(retail|brand|brands|shopper|consumer|ecommerce|fashion|beauty|grocery|luxury|store|stores|shopping)\b/.test(lower);
@@ -499,11 +523,11 @@ export default async function handler(req, res) {
     }
 
     const providerRunners = {
-      openai: (p) => runOpenAI(p, sourcePackPrompt, shouldGenerateMatrix),
-      claude: (p) => runClaude(p, sourcePackPrompt, shouldGenerateMatrix),
-      gemini: (p) => runGemini(p, sourcePackPrompt, shouldGenerateMatrix),
-      deepseek: (p) => runDeepSeek(p, sourcePackPrompt, shouldGenerateMatrix),
-      infomaniak: (p) => runInfomaniak(p, sourcePackPrompt, shouldGenerateMatrix),
+      openai: (p) => runOpenAI(p, sourcePackPrompt, shouldGenerateMatrix, researchMode),
+      claude: (p) => runClaude(p, sourcePackPrompt, shouldGenerateMatrix, researchMode),
+      gemini: (p) => runGemini(p, sourcePackPrompt, shouldGenerateMatrix, researchMode),
+      deepseek: (p) => runDeepSeek(p, sourcePackPrompt, shouldGenerateMatrix, researchMode),
+      infomaniak: (p) => runInfomaniak(p, sourcePackPrompt, shouldGenerateMatrix, researchMode),
     };
 
     const settled = await Promise.allSettled(
@@ -523,7 +547,7 @@ export default async function handler(req, res) {
       };
     });
 
-    const combined = await runCombined(results, prompt, sourcePackPrompt, shouldGenerateMatrix);
+    const combined = await runCombined(results, prompt, sourcePackPrompt, shouldGenerateMatrix, researchMode);
 
     return res.status(200).json({
       prompt,
@@ -549,7 +573,7 @@ export default async function handler(req, res) {
   }
 }
 
-async function runOpenAI(prompt, sourcePackPrompt, wantsScenarioMatrix) {
+async function runOpenAI(prompt, sourcePackPrompt, wantsScenarioMatrix, researchMode) {
   const key = process.env.OPENAI_API_KEY;
   if (!key) {
     const err = new Error("Missing OPENAI_API_KEY");
@@ -559,6 +583,8 @@ async function runOpenAI(prompt, sourcePackPrompt, wantsScenarioMatrix) {
 
   const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix);
+  const maxTokens = getTokenLimit(researchMode);
+  const temperature = getTemperature(researchMode);
 
   const r = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -572,8 +598,8 @@ async function runOpenAI(prompt, sourcePackPrompt, wantsScenarioMatrix) {
         { role: "system", content: "You are answering questions on " + todayStr + ". Always use today's actual date in your responses, not your training data cutoff." },
         { role: "user", content: fullPrompt }
       ],
-      temperature: 0.7,
-      max_completion_tokens: 500,
+      temperature: temperature,
+      max_completion_tokens: maxTokens,
     }),
   });
 
@@ -592,7 +618,7 @@ async function runOpenAI(prompt, sourcePackPrompt, wantsScenarioMatrix) {
   };
 }
 
-async function runClaude(prompt, sourcePackPrompt, wantsScenarioMatrix) {
+async function runClaude(prompt, sourcePackPrompt, wantsScenarioMatrix, researchMode) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) {
     const err = new Error("Missing ANTHROPIC_API_KEY");
@@ -602,6 +628,7 @@ async function runClaude(prompt, sourcePackPrompt, wantsScenarioMatrix) {
 
   const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix);
+  const maxTokens = getTokenLimit(researchMode);
 
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -612,7 +639,7 @@ async function runClaude(prompt, sourcePackPrompt, wantsScenarioMatrix) {
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-5",
-      max_tokens: 500,
+      max_tokens: maxTokens,
       system: "You are answering questions on " + todayStr + ". Always use today's actual date in your responses, not your training data cutoff.",
       messages: [{ role: "user", content: fullPrompt }],
     }),
@@ -633,7 +660,7 @@ async function runClaude(prompt, sourcePackPrompt, wantsScenarioMatrix) {
   };
 }
 
-async function runGemini(prompt, sourcePackPrompt, wantsScenarioMatrix) {
+async function runGemini(prompt, sourcePackPrompt, wantsScenarioMatrix, researchMode) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) {
     const err = new Error("Missing GEMINI_API_KEY");
@@ -644,6 +671,7 @@ async function runGemini(prompt, sourcePackPrompt, wantsScenarioMatrix) {
   try {
     const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
     const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix);
+    const maxTokens = getTokenLimit(researchMode);
     
     const ai = new GoogleGenAI({ apiKey: key });
 
@@ -663,7 +691,7 @@ async function runGemini(prompt, sourcePackPrompt, wantsScenarioMatrix) {
   }
 }
 
-async function runDeepSeek(prompt, sourcePackPrompt, wantsScenarioMatrix) {
+async function runDeepSeek(prompt, sourcePackPrompt, wantsScenarioMatrix, researchMode) {
   const key = process.env.DEEPSEEK_API_KEY;
   if (!key) {
     const err = new Error("Missing DEEPSEEK_API_KEY");
@@ -673,6 +701,8 @@ async function runDeepSeek(prompt, sourcePackPrompt, wantsScenarioMatrix) {
 
   const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix);
+  const maxTokens = getTokenLimit(researchMode);
+  const temperature = getTemperature(researchMode);
 
   const r = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
@@ -686,8 +716,8 @@ async function runDeepSeek(prompt, sourcePackPrompt, wantsScenarioMatrix) {
         { role: "system", content: "You are answering questions on " + todayStr + ". Always use today's actual date in your responses, not your training data cutoff." },
         { role: "user", content: fullPrompt }
       ],
-      temperature: 0.7,
-      max_tokens: 500,
+      temperature: temperature,
+      max_tokens: maxTokens,
       stream: false,
     }),
   });
@@ -707,7 +737,7 @@ async function runDeepSeek(prompt, sourcePackPrompt, wantsScenarioMatrix) {
   };
 }
 
-async function runInfomaniak(prompt, sourcePackPrompt, wantsScenarioMatrix) {
+async function runInfomaniak(prompt, sourcePackPrompt, wantsScenarioMatrix, researchMode) {
   const token = process.env.INFOMANIAK_API_TOKEN;
   const productId = process.env.INFOMANIAK_PRODUCT_ID;
   const model = process.env.INFOMANIAK_MODEL || "qwen3";
@@ -726,6 +756,8 @@ async function runInfomaniak(prompt, sourcePackPrompt, wantsScenarioMatrix) {
 
   const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   const fullPrompt = buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix);
+  const maxTokens = getTokenLimit(researchMode);
+  const temperature = getTemperature(researchMode);
 
   const r = await fetch(
     `https://api.infomaniak.com/2/ai/${productId}/openai/v1/chat/completions`,
@@ -741,8 +773,8 @@ async function runInfomaniak(prompt, sourcePackPrompt, wantsScenarioMatrix) {
           { role: "system", content: "You are answering questions on " + todayStr + ". Always use today's actual date in your responses, not your training data cutoff." },
           { role: "user", content: fullPrompt }
         ],
-        temperature: 0.7,
-        max_tokens: 500,
+        temperature: temperature,
+        max_tokens: maxTokens,
       }),
     }
   );
@@ -762,7 +794,7 @@ async function runInfomaniak(prompt, sourcePackPrompt, wantsScenarioMatrix) {
   };
 }
 
-async function runCombined(results, prompt, sourcePackPrompt, wantsScenarioMatrix) {
+async function runCombined(results, prompt, sourcePackPrompt, wantsScenarioMatrix, researchMode) {
   const key = process.env.OPENAI_API_KEY;
 
   if (!key) {
@@ -786,6 +818,8 @@ async function runCombined(results, prompt, sourcePackPrompt, wantsScenarioMatri
 
   const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   const systemPrompt = buildCombinedPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix);
+  const maxTokens = Math.max(500, getTokenLimit(researchMode) * 1.2); // Combiner gets 20% more to synthesize
+  const temperature = 0.4; // Lower temp for combining
 
   const r = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -802,8 +836,8 @@ async function runCombined(results, prompt, sourcePackPrompt, wantsScenarioMatri
           content: `User prompt:\n${prompt}\n\nModel outputs:\n\n${usable}`,
         },
       ],
-      temperature: 0.4,
-      max_completion_tokens: 400,
+      temperature: temperature,
+      max_completion_tokens: Math.floor(maxTokens),
     }),
   });
 
