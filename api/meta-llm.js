@@ -446,19 +446,29 @@ export default async function handler(req, res) {
       .find((m) => String(m.role || "").toLowerCase() === "user")
       ?.content?.toString?.().trim();
 
-    const rawPrompt = latestUserMessage || req.body?.prompt?.toString?.trim();
+const rawPrompt =
+  latestUserMessage ||
+  (typeof req.body?.prompt === "string"
+    ? req.body.prompt.trim()
+    : req.body?.prompt != null
+      ? String(req.body.prompt).trim()
+      : "");
 
-    if (!rawPrompt) {
-      return res.status(400).json({ error: "Missing prompt or user message" });
-    }
+if (!rawPrompt) {
+  return res.status(400).json({ error: "Missing prompt or user message" });
+}
 
-    const conversationHistory = messages.length
-      ? messages.map((m) => `${m.role}: ${m.content}`).join("\n")
-      : "";
+const conversationHistory = messages.length
+  ? messages.map((m) => `${m.role}: ${m.content}`).join("\n")
+  : "";
 
-    const userPrompt = rawPrompt;
-    const prompt = isScenarioPrompt(userPrompt) ? augmentScenarioPrompt(userPrompt) : userPrompt;
-    const shouldGenerateMatrix = wantsScenarioMatrix(userPrompt);
+const userPrompt = rawPrompt;
+const shouldGenerateMatrix = wantsScenarioMatrix(userPrompt);
+const prompt = shouldGenerateMatrix
+  ? augmentScenarioPrompt(userPrompt)
+  : userPrompt;
+      
+
     const researchMode = classifyResearchMode(userPrompt);
     const { query: tavilyQuery, searchMode } = buildTavilySearchQuery(userPrompt);
     let tavilyData = null;
