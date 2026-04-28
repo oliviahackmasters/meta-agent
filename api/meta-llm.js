@@ -94,6 +94,114 @@ function buildTavilySearchQuery(input) {
   return { query, searchMode };
 }
 
+const NEWS_DOMAIN_FILTERS = ["reuters.com", "apnews.com", "bbc.com", "nytimes.com"];
+const RETAIL_DOMAIN_FILTERS = ["retaildive.com", "voguebusiness.com", "ft.com", "businessoffashion.com"];
+const BRAND_QUERIES = ["Zara", "Nike", "Amazon"];
+
+function isRetailRelated(input) {
+  const lower = input.toLowerCase();
+  return /\b(retail|brand|brands|shopper|consumer|ecommerce|fashion|beauty|grocery|luxury|store|stores|shopping)\b/.test(lower);
+}
+
+function generateTavilySubQueries(input, searchMode) {
+  const queries = [
+    `Latest headlines for ${input}`,
+    `US headlines for ${input}`,
+  ];
+
+  if (searchMode === "news" || isRetailRelated(input)) {
+    queries.push(`UK retail news for ${input}`);
+  }
+
+  if (isRetailRelated(input)) {
+    for (const brand of BRAND_QUERIES) {
+      queries.push(`News and retail strategy for ${brand} related to ${input}`);
+    }
+  }
+
+  return [...new Set(queries)];
+}
+
+function computeSourceRank(item) {
+  let rank = 0;
+
+  if (typeof item.score === "number") {
+    rank += item.score;
+  }
+
+  const domain = String(item.url || item.link || item.sourceUrl || item.source || "").toLowerCase();
+  if (domain.includes("reuters.com")) rank += 4;
+  if (domain.includes("apnews.com") || domain.includes("bbc.com") || domain.includes("nytimes.com")) rank += 3;
+  if (domain.includes("retaildive.com") || domain.includes("businessoffashion.com") || domain.includes("voguebusiness.com") || domain.includes("ft.com")) rank += 3;
+  if (domain.includes("forbes.com") || domain.includes("wsj.com") || domain.includes("mckinsey.com")) rank += 1;
+
+  const published = new Date(item.publishedDate || item.published_date || item.published_at || item.date || 0);
+  if (!Number.isNaN(published.getTime())) {
+    const ageDays = (Date.now() - published.getTime()) / (1000 * 60 * 60 * 24);
+    if (ageDays < 30) rank += 2;
+    else if (ageDays < 180) rank += 1;
+  }
+
+  if (item.snippet || item.summary || item.excerpt || item.content || item.text) {
+    rank += 1;
+  }
+
+  return rank;
+}
+
+function mergeDeduplicateRankSources(items) {
+  const map = new Map();
+
+  for (const item of items || []) {
+    if (!item) continue;
+
+    const url = String(item.url || item.link || item.sourceUrl || item.source || "").trim();
+    const title = String(item.title || item.name || item.headline || "").trim();
+    const snippet = String(item.snippet || item.summary || item.excerpt || item.content || item.text || "").trim();
+    const key = url ? url.toLowerCase() : `${title}|${snippet}`;
+    if (!key.trim()) continue;
+
+    const rank = computeSourceRank(item);
+    const existing = map.get(key);
+
+    if (!existing || rank > existing.rank) {
+      map.set(key, { item, rank });
+    } else if (existing && !existing.item.snippet && item.snippet) {
+      map.set(key, { item: { ...existing.item, snippet: item.snippet }, rank: existing.rank });
+    }
+  }
+
+  return [...map.values()]
+    .sort((a, b) => b.rank - a.rank)
+    .map((entry) => entry.item);
+}
+
+async function runTavilySearchSubQueries(input, searchMode) {
+  const subQueries = generateTavilySubQueries(input, searchMode);
+  const preferred_sources =
+    searchMode === "news"
+      ? NEWS_DOMAIN_FILTERS
+      : isRetailRelated(input)
+      ? RETAIL_DOMAIN_FILTERS
+      : undefined;
+
+  const baseOptions = {
+    max_results: 10,
+    search_depth: "advanced",
+  };
+  if (preferred_sources?.length) {
+    baseOptions.preferred_sources = preferred_sources;
+  }
+
+  const responses = await Promise.all(
+    subQueries.map((query) =>
+      tavilySearch(query, baseOptions).then((res) => res?.results || res?.items || [])
+    )
+  );
+
+  return responses.flat();
+}
+
 function parseUrls(input) {
   const urlPattern = /https?:\/\/[^\s]+/g;
   const matches = input.match(urlPattern) || [];
@@ -150,6 +258,7 @@ INSTRUCTIONS:
 - Cite sources as [1], [2], etc., and include URLs when referenced.
 - Flag weak evidence or insufficient support.
 - Do not invent data, dates, or sources.
+- If any section has weak evidence, explicitly say so and still answer every requested part of the query.
 - Use British English spelling.
 
 User query:
@@ -198,23 +307,27 @@ async function tavilyFetch(endpoint, payload) {
   return await response.json();
 }
 
-async function tavilySearch(query) {
+async function tavilySearch(query, options = {}) {
   return await tavilyFetch("search", {
     query,
     topic: "general",
-    search_depth: "fast",
+    search_depth: "advanced",
+    max_results: 10,
     auto_parameters: true,
+    ...options,
   });
 }
 
-async function tavilyResearch(query) {
+async function tavilyResearch(query, options = {}) {
   return await tavilyFetch("search", {
     query,
     topic: "research",
     search_depth: "advanced",
+    max_results: 10,
     auto_parameters: true,
     include_answer: true,
     include_raw_content: false,
+    ...options,
   });
 }
 
@@ -254,14 +367,12 @@ export default async function handler(req, res) {
     let sourceItems = [];
 
     if (researchMode === "search") {
-      tavilyData = await tavilySearch(tavilyQuery);
-      sourceItems = tavilyData?.results || tavilyData?.items || [];
+      sourceItems = await runTavilySearchSubQueries(tavilyQuery, searchMode);
     } else if (researchMode === "research") {
-      const [searchResult, researchResult] = await Promise.all([
-        tavilySearch(tavilyQuery),
+      const [searchItems, researchResult] = await Promise.all([
+        runTavilySearchSubQueries(tavilyQuery, searchMode),
         tavilyResearch(tavilyQuery),
       ]);
-      const searchItems = searchResult?.results || searchResult?.items || [];
       const researchItems = researchResult?.results || researchResult?.items || [];
       sourceItems = [...searchItems, ...researchItems];
       if (researchResult?.summary) {
@@ -283,7 +394,8 @@ export default async function handler(req, res) {
       sourceItems = tavilyData?.extracts || tavilyData?.results || tavilyData?.items || [];
     }
 
-    const sourcePack = normalizeSourceItems(sourceItems, researchMode === "none" ? "none" : searchMode);
+    const mergedSources = mergeDeduplicateRankSources(sourceItems);
+    const sourcePack = normalizeSourceItems(mergedSources, researchMode === "none" ? "none" : searchMode);
     const sourcePackPrompt = formatSourcePack(sourcePack, researchMode === "none" ? "none" : searchMode);
 
     const requestedProviders = Array.isArray(req.body?.providers)
