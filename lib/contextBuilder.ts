@@ -30,9 +30,29 @@ export function buildPromptContext({
 
   if (outputFormat === "scenario") {
     parts.push(
-      "The user is asking for a scenario matrix. Identify the key drivers affecting the industry, choose X and Y axis drivers for potential futures, and present the result as a clean 2x2 matrix. " +
-      "First list the key drivers clearly, then show the matrix with axis labels and four quadrant descriptions. " +
-      "Do not use a long narrative; use a simple table/matrix format for clarity."
+      [
+        "The user is asking for a scenario matrix.",
+        "Identify the key drivers affecting the industry.",
+        "Choose two high-impact, high-uncertainty drivers as the X and Y axes.",
+        "",
+        "Output requirements:",
+        "- First list the key drivers clearly.",
+        "- Then list the chosen axes.",
+        "- Then output a clean 2x2 scenario matrix.",
+        "- The matrix must be a valid Markdown table.",
+        "- Do not output raw HTML.",
+        "- Do not wrap the table in a code block.",
+        "- Do not use a long narrative.",
+        "",
+        "Use this exact matrix shape:",
+        "",
+        "|  | High [X-axis driver] | Low [X-axis driver] |",
+        "|---|---|---|",
+        "| High [Y-axis driver] | **Scenario 1: [Name]**<br>- [Concise description]<br>- [Implication] | **Scenario 2: [Name]**<br>- [Concise description]<br>- [Implication] |",
+        "| Low [Y-axis driver] | **Scenario 3: [Name]**<br>- [Concise description]<br>- [Implication] | **Scenario 4: [Name]**<br>- [Concise description]<br>- [Implication] |",
+        "",
+        "After the matrix, add a short Insights section with 2-3 bullets maximum."
+      ].join("\n")
     );
   }
 

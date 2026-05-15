@@ -102,13 +102,13 @@ const BRAND_QUERIES = ["Zara", "Nike", "Amazon"];
 function getTokenLimit(researchMode) {
   switch (researchMode) {
     case "research":
-      return 800; // Deep research needs more tokens
+      return 1000; // Deep research needs more tokens
     case "search":
-      return 350; // News/search moderate
+      return 450; // News/search moderate
     case "extract":
       return 400; // URL extraction
     default:
-      return 250; // Concise answers by default
+      return 350; // Concise answers by default
   }
 }
 
