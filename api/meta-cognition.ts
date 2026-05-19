@@ -6,6 +6,14 @@ import { buildPromptContext, type UserMemory } from "../lib/contextBuilder.js";
 import { runModels } from "../lib/runModels.js";
 import { generateSearchQueries } from "../lib/generateSearchQueries.js";
 import { needsWebResearch, webSearch } from "../lib/webSearch.js";
+import {
+  buildProjectMemoryContext,
+  getProjectMemory,
+  isProjectMemoryConfigured,
+  saveProjectMemoryItem,
+  summariseOutputForMemory,
+  upsertProject,
+} from "../lib/projectMemory.ts";
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -22,8 +30,22 @@ export default async function handler(req, res) {
     const input = req.body?.input?.toString?.().trim();
     const messages: Message[] = req.body?.messages || [];
 
+    const projectId = req.body?.projectId?.toString?.().trim();
+    const projectName = req.body?.projectName?.toString?.().trim();
+    const useProjectMemory = req.body?.useProjectMemory !== false;
+    const saveToProjectMemory = req.body?.saveToProjectMemory !== false;
+
     if (!input) {
       return res.status(400).json({ error: "Missing input" });
+    }
+
+    let projectMemoryItems = [];
+    let projectMemoryContext = "";
+
+    if (projectId && useProjectMemory && isProjectMemoryConfigured()) {
+      await upsertProject(projectId, projectName);
+      projectMemoryItems = await getProjectMemory(projectId);
+      projectMemoryContext = buildProjectMemoryContext(projectMemoryItems);
     }
 
     // Phase 1: Generate search queries using LLM
@@ -44,39 +66,32 @@ export default async function handler(req, res) {
       const sourcePromises = searchQueries.map(query => fetchSources(query));
       const sourceArrays = await Promise.all(sourcePromises);
       sources = sourceArrays.flat();
-      // Remove duplicates based on URL
       const uniqueSources = sources.filter((source, index, self) =>
         index === self.findIndex(s => s.url === source.url)
       );
-      sources = uniqueSources.slice(0, 20); // Limit total sources
+      sources = uniqueSources.slice(0, 20);
     }
 
-    // Merge web search results with traditional sources
     if (webSearchResult.sources.length > 0) {
       const allSources = [...webSearchResult.sources, ...sources];
       const uniqueSources = allSources.filter((source, index, self) =>
         index === self.findIndex(s => s.url === source.url)
       );
-      sources = uniqueSources.slice(0, 25); // Allow a few more sources with web search
+      sources = uniqueSources.slice(0, 25);
     }
 
-    // Build evidence pack
     const evidence = buildEvidencePack(input, sources);
-
-    // Update session summary
     const sessionSummary = await updateSessionSummary(messages);
 
-    // Mock memory for now
     const memory: UserMemory = {
       preferences: [],
-      toolsUsed: [],
-      projectContext: "",
+      toolsUsed: projectMemoryItems.map(item => item.toolName || item.tool_name || "unknown"),
+      projectContext: projectMemoryContext,
     };
 
-    // Build context
     const todayStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
     const todayISO = new Date().toISOString().split('T')[0];
-    
+
     const systemPrompt = `TODAY IS ${todayStr} (${todayISO}) - NOT EARLIER.
 
 Your task: Answer the user's question using LIVE EVIDENCE fetched from the internet TODAY.
@@ -90,7 +105,8 @@ CRITICAL: You have access to Evidence sources below. Use them as your PRIMARY so
 Your training data is from 2024 or earlier. This Evidence section is from TODAY and takes ABSOLUTE PRIORITY.
 
 Do not invent statistics or sources. If evidence is limited, say so.`;
-    const recentMessages = messages.slice(-10); // Short-term memory
+
+    const recentMessages = messages.slice(-10);
 
     const context = buildPromptContext({
       systemPrompt,
@@ -102,14 +118,51 @@ Do not invent statistics or sources. If evidence is limited, say so.`;
       outputFormat: decision.outputFormat,
     });
 
-    // Run models
     const results = await runModels(context);
+
+    if (projectId && saveToProjectMemory && isProjectMemoryConfigured()) {
+      try {
+        const combinedText = Array.isArray(results)
+          ? results
+              .map((result) => {
+                const provider = result?.provider || "unknown";
+                const answer = result?.answer || result?.text || "";
+                return `Provider: ${provider}\n${answer}`;
+              })
+              .join("\n\n---\n\n")
+          : JSON.stringify(results);
+
+        await saveProjectMemoryItem({
+          projectId,
+          toolName: "meta-cognition",
+          type: "chat-output",
+          title: input.slice(0, 120),
+          summary: summariseOutputForMemory(combinedText),
+          content: combinedText,
+          metadata: {
+            input,
+            searchQueries,
+            webSearchPerformed: webSearchResult.searchPerformed,
+            evidenceCount: evidence?.sources?.length || 0,
+            timestamp: new Date().toISOString(),
+          },
+        });
+      } catch (memoryErr) {
+        console.error("Failed to save project memory:", memoryErr);
+      }
+    }
 
     return res.status(200).json({
       input,
       decision,
       evidence,
       results,
+      projectMemory: {
+        enabled: Boolean(projectId),
+        configured: isProjectMemoryConfigured(),
+        projectId: projectId || null,
+        memoryItemsLoaded: projectMemoryItems.length,
+      },
       webSearch: {
         performed: webSearchResult.searchPerformed,
         resultsCount: webSearchResult.sources.length,
