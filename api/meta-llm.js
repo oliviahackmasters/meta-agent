@@ -12,6 +12,32 @@ function augmentScenarioPrompt(text) {
   return `The user is requesting a scenario matrix output.\n- List the top 2-3 drivers affecting the industry.\n- Choose one driver for the X axis and one driver for the Y axis.\n- Present a 2x2 matrix as a simple table with axis labels.\n- In each of the four cells, briefly describe the scenario in 1-2 sentences.\n- Use a plain text table layout like:\n  | X\\Y | High Y | Low Y |\n  | High X | ... | ... |\n  | Low X | ... | ... |\n- Each cell should include: scenario name, characteristics, and 1-2 source-backed claims.\n- Keep it concise and structured.\n\n${text}`;
 }
 
+const tavilyErrorState = {
+  errors: [],
+};
+
+function resetTavilyErrors() {
+  tavilyErrorState.errors = [];
+}
+
+function recordTavilyError(err, context = "") {
+  const message = err?.message || String(err);
+  const status = err?.status || null;
+
+  tavilyErrorState.errors.push({
+    context,
+    status,
+    message,
+  });
+}
+
+function hasTavilyLimitError() {
+  return tavilyErrorState.errors.some((err) =>
+    err.status === 432 ||
+    /exceeds your plan|usage limit|rate limit|quota/i.test(err.message)
+  );
+}
+
 const TAVILY_ENDPOINT = (process.env.TAVILY_ENDPOINT || "https://api.tavily.com").replace(/\/$/, "");
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
 const TAVILY_PROJECT_ID = process.env.TAVILY_PROJECT_ID;
@@ -95,8 +121,44 @@ function buildTavilySearchQuery(input) {
   return { query: query.substring(0, 400), searchMode };
 }
 
-const NEWS_DOMAIN_FILTERS = ["reuters.com", "apnews.com", "bbc.com", "nytimes.com"];
-const RETAIL_DOMAIN_FILTERS = ["retaildive.com", "voguebusiness.com", "ft.com", "businessoffashion.com"];
+const GENERAL_NEWS_DOMAIN_FILTERS = ["reuters.com", "apnews.com", "bbc.com", "nytimes.com"];
+
+const POLITICS_DOMAIN_FILTERS = [
+  "reuters.com",
+  "apnews.com",
+  "bbc.com",
+  "channelnewsasia.com",
+  "straitstimes.com",
+  "gov.sg",
+  "pmo.gov.sg",
+  "mfa.gov.sg",
+];
+
+const RETAIL_DOMAIN_FILTERS = [
+  "retaildive.com",
+  "voguebusiness.com",
+  "ft.com",
+  "businessoffashion.com",
+];
+
+const ECONOMY_DOMAIN_FILTERS = [
+  "reuters.com",
+  "ft.com",
+  "bloomberg.com",
+  "wsj.com",
+  "imf.org",
+  "worldbank.org",
+];
+
+const TECH_DOMAIN_FILTERS = [
+  "techcrunch.com",
+  "theverge.com",
+  "wired.com",
+  "mit.edu",
+  "ieee.org",
+  "reuters.com",
+];
+
 const BRAND_QUERIES = ["Zara", "Nike", "Amazon"];
 
 function getTokenLimit(researchMode) {
@@ -123,9 +185,30 @@ function getTemperature(researchMode) {
   }
 }
 
+function detectResearchDomain(input) {
+  const lower = String(input || "").toLowerCase();
+
+  if (/\b(government|politics|political|minister|prime minister|president|parliament|cabinet|election|policy|policies|legislation|law|regulation|public sector|state|diplomacy|foreign affairs)\b/.test(lower)) {
+    return "politics";
+  }
+
+  if (/\b(retail|brand|brands|shopper|consumer|ecommerce|e-commerce|fashion|beauty|grocery|luxury|store|stores|shopping|department store|department stores)\b/.test(lower)) {
+    return "retail";
+  }
+
+  if (/\b(technology|ai|artificial intelligence|software|platform|cloud|cyber|semiconductor|startup|app|digital)\b/.test(lower)) {
+    return "technology";
+  }
+
+  if (/\b(economy|economic|market|markets|inflation|interest rates|gdp|trade|finance|banking|investment)\b/.test(lower)) {
+    return "economy";
+  }
+
+  return "general";
+}
+
 function isRetailRelated(input) {
-  const lower = input.toLowerCase();
-  return /\b(retail|brand|brands|shopper|consumer|ecommerce|fashion|beauty|grocery|luxury|store|stores|shopping)\b/.test(lower);
+  return detectResearchDomain(input) === "retail";
 }
 
 function truncateQuery(query, maxLength = 400) {
@@ -133,47 +216,108 @@ function truncateQuery(query, maxLength = 400) {
 }
 
 function rewriteQuery(query) {
-  const lower = query.toLowerCase();
-  const rewrites = [
-    `${query} retail trends report`,
-    `${query} department stores analysis 2025 2026`,
-    `future of department stores industry report`,
-    `department stores decline or growth statistics`,
-    `case studies department store strategy retail`
+  const domain = detectResearchDomain(query);
+  const lower = String(query || "").toLowerCase();
+
+  if (domain === "retail") {
+    const rewrites = [
+      `${query} retail trends report`,
+      `${query} retail industry analysis 2025 2026`,
+      `${query} consumer behaviour trends`,
+      `${query} store strategy case studies`,
+      `${query} ecommerce and omnichannel trends`,
+    ];
+
+    if (lower.includes("department store")) {
+      rewrites.push(`${query} department stores outlook`);
+      rewrites.push(`${query} department store closures openings data`);
+    }
+
+    if (lower.includes("future")) {
+      rewrites.push(`${query} 2026 predictions`);
+      rewrites.push(`${query} emerging retail trends`);
+    }
+
+    return rewrites.slice(0, 5);
+  }
+
+  if (domain === "politics") {
+    return [
+      `${query} latest government news`,
+      `${query} cabinet changes latest`,
+      `${query} parliament policy announcements latest`,
+      `${query} official government statement`,
+      `${query} Reuters AP BBC latest`,
+    ];
+  }
+
+  if (domain === "economy") {
+    return [
+      `${query} latest economic news`,
+      `${query} market analysis latest`,
+      `${query} official statistics latest`,
+      `${query} Reuters FT latest`,
+      `${query} outlook 2026`,
+    ];
+  }
+
+  if (domain === "technology") {
+    return [
+      `${query} latest technology news`,
+      `${query} product update latest`,
+      `${query} industry analysis latest`,
+      `${query} Reuters TechCrunch latest`,
+      `${query} 2026 trends`,
+    ];
+  }
+
+  return [
+    `${query} latest news`,
+    `${query} recent developments`,
+    `${query} current analysis`,
+    `${query} official sources`,
+    `${query} Reuters AP BBC`,
   ];
-
-  // Add specific rewrites based on keywords
-  if (lower.includes("department store")) {
-    rewrites.push(`${query} retail industry outlook`);
-    rewrites.push(`${query} store closures and openings data`);
-  }
-
-  if (lower.includes("future")) {
-    rewrites.push(`${query} 2026 predictions`);
-    rewrites.push(`${query} emerging trends`);
-  }
-
-  return rewrites.slice(0, 5); // Limit to 5 rewrites
 }
 
 function generateTavilySubQueries(input, searchMode) {
   const truncatedInput = input.substring(0, 200);
-  const queries = [
-    truncateQuery(`Latest headlines for ${truncatedInput}`),
-    truncateQuery(`US headlines for ${truncatedInput}`),
-  ];
+  const domain = detectResearchDomain(input);
 
-  if (searchMode === "news" || isRetailRelated(input)) {
-    queries.push(truncateQuery(`UK retail news for ${truncatedInput}`));
+  const queries = [];
+
+  if (searchMode === "news") {
+    queries.push(truncateQuery(`Latest news for ${truncatedInput}`));
+    queries.push(truncateQuery(`Recent developments for ${truncatedInput}`));
+  } else {
+    queries.push(truncateQuery(truncatedInput));
+    queries.push(truncateQuery(`Analysis of ${truncatedInput}`));
   }
 
-  if (isRetailRelated(input)) {
+  if (domain === "politics") {
+    queries.push(truncateQuery(`Government policy and cabinet updates for ${truncatedInput}`));
+    queries.push(truncateQuery(`Official statements and parliament news for ${truncatedInput}`));
+  }
+
+  if (domain === "retail") {
+    queries.push(truncateQuery(`Retail industry news for ${truncatedInput}`));
+
     for (const brand of BRAND_QUERIES) {
       queries.push(truncateQuery(`News and retail strategy for ${brand} related to ${truncatedInput}`));
     }
   }
 
-  return [...new Set(queries)];
+  if (domain === "economy") {
+    queries.push(truncateQuery(`Economic indicators and market analysis for ${truncatedInput}`));
+    queries.push(truncateQuery(`Official economic data for ${truncatedInput}`));
+  }
+
+  if (domain === "technology") {
+    queries.push(truncateQuery(`Technology industry news for ${truncatedInput}`));
+    queries.push(truncateQuery(`Product and platform updates for ${truncatedInput}`));
+  }
+
+  return [...new Set(queries)].slice(0, 6);
 }
 
 function computeSourceRank(item) {
@@ -232,17 +376,27 @@ function mergeDeduplicateRankSources(items) {
 
 async function runTavilySearchSubQueries(input, searchMode) {
   const subQueries = generateTavilySubQueries(input, searchMode);
-  const preferred_sources =
-    searchMode === "news"
-      ? NEWS_DOMAIN_FILTERS
-      : isRetailRelated(input)
-      ? RETAIL_DOMAIN_FILTERS
-      : undefined;
+  const domain = detectResearchDomain(input);
+
+  let preferred_sources;
+
+  if (domain === "politics") {
+    preferred_sources = POLITICS_DOMAIN_FILTERS;
+  } else if (domain === "retail") {
+    preferred_sources = RETAIL_DOMAIN_FILTERS;
+  } else if (domain === "economy") {
+    preferred_sources = ECONOMY_DOMAIN_FILTERS;
+  } else if (domain === "technology") {
+    preferred_sources = TECH_DOMAIN_FILTERS;
+  } else if (searchMode === "news") {
+    preferred_sources = GENERAL_NEWS_DOMAIN_FILTERS;
+  }
 
   const baseOptions = {
     max_results: 10,
     search_depth: "advanced",
   };
+
   if (preferred_sources?.length) {
     baseOptions.preferred_sources = preferred_sources;
   }
@@ -252,6 +406,7 @@ async function runTavilySearchSubQueries(input, searchMode) {
       tavilySearch(query, baseOptions)
         .then((res) => res?.results || res?.items || [])
         .catch((err) => {
+          recordTavilyError(err, query);
           console.warn("Tavily subquery failed", query, err?.message || err);
           return [];
         })
@@ -291,9 +446,21 @@ function formatSourcePack(sourcePack, searchMode) {
     day: "numeric",
   });
 
-  if (!sourcePack.length) {
-    return `Server date: ${serverDate}\nSearch mode: ${searchMode}\nNo sources available. You may provide only high-level directional analysis, clearly labeled as such.`;
-  }
+if (!sourcePack.length) {
+  return `Server date: ${serverDate}
+Search mode: ${searchMode}
+SOURCE PACK STATUS: EMPTY
+
+No usable sources are available.
+
+Rules:
+- Do not provide a source-backed answer.
+- Do not invent citations.
+- Do not use placeholder citations.
+- Do not use "(Source: [N] Title, URL)".
+- If answering at all, state that no usable sources were retrieved.
+- General background may only be included under the heading "General context, not source-backed".`;
+}
 
   return [
     `Server date: ${serverDate}`,
@@ -312,12 +479,13 @@ ${sourcePackPrompt}
 
 OUTPUT RULES:
 - This is a new query. Use only the current source pack for evidence. Do not rely on previous source packs or previous sourced claims unless the user explicitly asks to continue from them.
-- CITATION: Use inline citation format ONLY. When citing a source, include: (Source: [N] Title, URL). Do NOT use [1], [2], etc. without URLs.
+- CITATION: Use inline citation format ONLY. When citing a source, include the exact source number, title and URL from the source pack, for example: (Source: [1] Actual Source Title, https://example.com). Do NOT use placeholder citations such as (Source: [N] Title, URL).
 - CLAIMS: Every factual claim must be backed by a source from the sourcePack. If unsupported, omit it or label it as conjecture.
 - FORMAT: Provide a structured answer with themes/insights. Do not force frameworks.
 - SCENARIO MATRIX: ${wantsScenarioMatrix ? "You may generate a 2x2 scenario matrix with drivers, axis labels, and source-backed claims in each cell." : "Do NOT generate a scenario matrix. Provide thematic analysis only with key insights, drivers, and challenges."}
 - WEAK SOURCES: If sources are limited, keep answers concise and qualified. Explicitly state uncertainty. Do NOT expand into elaborate frameworks.
 - NO INVENTION: Do not invent data, dates, statistics, or sources.
+- EMPTY SOURCE PACK: If the source pack status is EMPTY, do not answer the user's current/latest question. Say that no usable sources were retrieved and that a source-backed answer cannot be generated.
 - DIRECTIONAL ONLY: If no strong sources exist, you may provide high-level directional analysis clearly labeled as "General industry knowledge (not source-backed)" without specific claims.
 - STRUCTURE: Use clear headings, numbered points, and source citations inline.
 - LANGUAGE: Use British English spelling.
@@ -334,9 +502,9 @@ ${sourcePackPrompt}
 
 FINAL OUTPUT RULES:
 - This is a new query. Use only the current source pack for evidence. Do not rely on previous source packs or previous sourced claims unless the user explicitly asks to continue from them.
-- INSUFFICIENT EVIDENCE: If all models indicate insufficient evidence or no sources, return: "No sufficient sources found. To answer reliably, improve the query or run deeper research."
+- INSUFFICIENT EVIDENCE: If the source pack is empty, return only: "No usable sources were retrieved, so I cannot provide a source-backed answer."
 - FOLLOW INTENT: Do not introduce structures (e.g., scenario matrix) unless explicitly requested.
-- CITATION ONLY: All claims must be source-backed with inline citations: (Source: [N] Title, URL). Remove unsourced claims.
+- CITATION ONLY: All claims must be source-backed with inline citations using the exact source number, title and URL from the source pack. Never use placeholder citations such as (Source: [N] Title, URL). Remove unsourced claims.
 - CONFLICTS: If models disagree, prioritise source-backed claims. Flag disagreements with reasoning.
 - MATRIX: ${wantsScenarioMatrix ? "You may present a 2x2 scenario matrix with source-backed claims in each cell." : "Do NOT generate a scenario matrix unless requested. Provide thematic analysis instead."}
 - WEAK SOURCES: If sources are thin, keep answers concise and qualified. Clearly state uncertainty. Do not pad with generic frameworks.
@@ -436,6 +604,7 @@ export default async function handler(req, res) {
   }
 
   try {
+    resetTavilyErrors();
     const messages = Array.isArray(req.body?.messages)
       ? req.body.messages.filter((m) => m && typeof m.content === "string")
       : [];
@@ -544,6 +713,58 @@ const prompt = shouldGenerateMatrix
     const mergedSources = mergeDeduplicateRankSources(sourceItems);
     const sourcePack = normalizeSourceItems(mergedSources, researchMode === "none" ? "none" : searchMode);
     const sourcePackPrompt = formatSourcePack(sourcePack, researchMode === "none" ? "none" : searchMode);
+
+    const searchWasRequested = researchMode === "search" || researchMode === "research" || researchMode === "extract";
+const sourcePackEmpty = sourcePack.length === 0;
+const tavilyLimitHit = hasTavilyLimitError();
+
+if (searchWasRequested && sourcePackEmpty && tavilyLimitHit) {
+  return res.status(200).json({
+    latestUserMessage: userPrompt,
+    messages,
+    prompt,
+    researchMode,
+    searchMode,
+    tavilyQuery,
+    selectedProviders: [],
+    results: [],
+    combined: {
+      provider: "combined",
+      text: "Live search failed because the Tavily usage limit has been exceeded. No usable sources were retrieved, so I cannot provide a source-backed current answer. Upgrade the Tavily plan, wait for quota reset, or configure a fallback search provider.",
+    },
+    sourcePack: [],
+    status: "search_limit_exceeded",
+    meta: {
+      timestamp: new Date().toISOString(),
+      hasSources: false,
+      tavilyErrors: tavilyErrorState.errors,
+    },
+  });
+}
+
+if (searchWasRequested && sourcePackEmpty) {
+  return res.status(200).json({
+    latestUserMessage: userPrompt,
+    messages,
+    prompt,
+    researchMode,
+    searchMode,
+    tavilyQuery,
+    selectedProviders: [],
+    results: [],
+    combined: {
+      provider: "combined",
+      text: "No usable sources were retrieved for this query, so I cannot provide a source-backed current answer. Try a more specific query or configure additional search/source providers.",
+    },
+    sourcePack: [],
+    status: "no_sources",
+    meta: {
+      timestamp: new Date().toISOString(),
+      hasSources: false,
+      tavilyErrors: tavilyErrorState.errors,
+    },
+  });
+}
 
     const requestedProviders = Array.isArray(req.body?.providers)
       ? req.body.providers
