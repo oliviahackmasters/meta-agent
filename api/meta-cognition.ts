@@ -13,7 +13,7 @@ import {
   saveProjectMemoryItem,
   summariseOutputForMemory,
   upsertProject,
-} from "../lib/projectMemory.ts";
+} from "../lib/projectMemory.js";
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -48,19 +48,14 @@ export default async function handler(req, res) {
       projectMemoryContext = buildProjectMemoryContext(projectMemoryItems);
     }
 
-    // Phase 1: Generate search queries using LLM
     const searchQueries = await generateSearchQueries(input, messages);
-
-    // Phase 2: Route (keep for other decisions)
     const decision = await routeUserQuery(input, messages);
 
-    // Phase 3: Check if web research is needed
     let webSearchResult = { sources: [], searchPerformed: false, error: undefined };
     if (needsWebResearch(input)) {
       webSearchResult = await webSearch(input);
     }
 
-    // Fetch sources for each search query
     let sources = [];
     if (searchQueries.length > 0) {
       const sourcePromises = searchQueries.map(query => fetchSources(query));
