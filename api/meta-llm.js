@@ -1,12 +1,88 @@
 import { GoogleGenAI } from "@google/genai";
-import {
-  buildProjectMemoryContext,
-  getProjectMemory,
-  isProjectMemoryConfigured,
-  saveProjectMemoryItem,
-  summariseOutputForMemory,
-  upsertProject,
-} from "../lib/projectMemory.js";
+
+
+const PROJECT_MEMORY_API_BASE =
+  process.env.PROJECT_MEMORY_API_BASE ||
+  "https://project-memory-api.olivia-9ef.workers.dev/";
+
+function summariseOutputForMemory(text, maxLength = 700) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  return clean.length > maxLength ? clean.slice(0, maxLength - 3) + "..." : clean;
+}
+
+async function buildProjectContext({
+  projectId,
+  toolName,
+  task,
+  methodologyTags = [],
+  includeMethodology = true,
+  maxChars = 12000,
+}) {
+  if (!projectId) {
+    return {
+      contextBlock: "",
+      memoryItemsUsed: 0,
+      contextItemsUsed: 0,
+      methodologyItemsUsed: 0,
+    };
+  }
+
+  const response = await fetch(`${PROJECT_MEMORY_API_BASE}/api/context/build`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      projectId,
+      toolName,
+      task,
+      methodologyTags,
+      includeMethodology,
+      maxChars,
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Project context failed: ${response.status} ${text}`);
+  }
+
+  return await response.json();
+}
+
+async function saveProjectMemory({
+  projectId,
+  toolName,
+  type,
+  title,
+  summary,
+  content,
+  metadata,
+}) {
+  if (!projectId || !content) return null;
+
+  const response = await fetch(
+    `${PROJECT_MEMORY_API_BASE}/api/projects/${encodeURIComponent(projectId)}/memory`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        toolName,
+        type,
+        title,
+        summary,
+        content,
+        metadata,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Project memory save failed: ${response.status} ${text}`);
+  }
+
+  return await response.json();
+}
+
 
 const AVAILABLE_PROVIDERS = ["openai", "claude", "gemini", "deepseek", "infomaniak"];
 const DEFAULT_PROVIDERS = ["openai"];
@@ -61,16 +137,35 @@ export default async function handler(req, res) {
     const projectName = req.body?.projectName?.toString?.().trim();
     const useProjectMemory = req.body?.useProjectMemory !== false;
     const saveToProjectMemory = req.body?.saveToProjectMemory !== false;
-    let projectMemoryItems = [];
-    let projectMemoryContext = "";
-    let memorySaved = false;
-    let memorySaveError = null;
 
-    if (projectId && useProjectMemory && isProjectMemoryConfigured()) {
-      await upsertProject(projectId, projectName);
-      projectMemoryItems = await getProjectMemory(projectId);
-      projectMemoryContext = buildProjectMemoryContext(projectMemoryItems);
-    }
+let projectContext = {
+  contextBlock: "",
+  memoryItemsUsed: 0,
+  contextItemsUsed: 0,
+  methodologyItemsUsed: 0,
+};
+let projectMemoryContext = "";
+let memorySaved = false;
+let memorySaveError = null;
+let projectContextError = null;
+
+if (projectId && useProjectMemory) {
+  try {
+    projectContext = await buildProjectContext({
+      projectId,
+      toolName: "meta-llm",
+      task: rawPrompt,
+      methodologyTags: ["meta-cognition", "comparison", "scenario-planning", "drivers"],
+      includeMethodology: true,
+      maxChars: 12000,
+    });
+
+    projectMemoryContext = projectContext.contextBlock || "";
+  } catch (err) {
+    projectContextError = err?.message || String(err);
+    console.error("Failed to load project context:", err);
+  }
+}
 
     const conversationHistory = messages.length ? messages.map((m) => `${m.role}: ${m.content}`).join("\n") : "";
     const userPrompt = rawPrompt;
@@ -113,25 +208,39 @@ export default async function handler(req, res) {
     const results = settled.map((item, index) => item.status === "fulfilled" ? item.value : { provider: uniqueProviders[index], error: item.reason?.message || String(item.reason) });
     const combined = await runCombined(results, userPrompt, sourcePackPrompt, shouldGenerateMatrix, researchMode, projectMemoryContext);
 
-    if (projectId && saveToProjectMemory && isProjectMemoryConfigured()) {
-      try {
-        const combinedText = combined?.text || combined?.error || "";
-        const providerText = results.map((r) => `Provider: ${r.provider}\n${r.text || r.error || ""}`).join("\n\n---\n\n");
-        await saveProjectMemoryItem({
-          projectId,
-          toolName: "meta-llm",
-          type: "chat-output",
-          title: userPrompt.slice(0, 120),
-          summary: summariseOutputForMemory(combinedText || providerText),
-          content: [`USER PROMPT:\n${userPrompt}`, `COMBINED RESPONSE:\n${combinedText}`, `PROVIDER OUTPUTS:\n${providerText}`].join("\n\n"),
-          metadata: { providers: uniqueProviders, researchMode, searchMode, sourceCount: sourcePack.length, timestamp: new Date().toISOString() },
-        });
-        memorySaved = true;
-      } catch (err) {
-        memorySaveError = err?.message || String(err);
-        console.error("Failed to save meta-llm project memory:", err);
-      }
-    }
+if (projectId && saveToProjectMemory) {
+  try {
+    const combinedText = combined?.text || combined?.error || "";
+    const providerText = results
+      .map((r) => `Provider: ${r.provider}\n${r.text || r.error || ""}`)
+      .join("\n\n---\n\n");
+
+    await saveProjectMemory({
+      projectId,
+      toolName: "meta-llm",
+      type: "chat-output",
+      title: userPrompt.slice(0, 120),
+      summary: summariseOutputForMemory(combinedText || providerText),
+      content: [
+        `USER PROMPT:\n${userPrompt}`,
+        `COMBINED RESPONSE:\n${combinedText}`,
+        `PROVIDER OUTPUTS:\n${providerText}`,
+      ].join("\n\n"),
+      metadata: {
+        providers: uniqueProviders,
+        researchMode,
+        searchMode,
+        sourceCount: sourcePack.length,
+        timestamp: new Date().toISOString(),
+      },
+    });
+
+    memorySaved = true;
+  } catch (err) {
+    memorySaveError = err?.message || String(err);
+    console.error("Failed to save meta-llm project memory:", err);
+  }
+}
 
     return res.status(200).json({
       latestUserMessage: userPrompt,
@@ -145,7 +254,17 @@ export default async function handler(req, res) {
       combined,
       sourcePack,
       status: hasSources ? "success" : "no_sources",
-      projectMemory: { enabled: Boolean(projectId), configured: isProjectMemoryConfigured(), projectId: projectId || null, memoryItemsLoaded: projectMemoryItems.length, saved: memorySaved, saveError: memorySaveError },
+      projectMemory: {
+        enabled: Boolean(projectId),
+        configured: Boolean(PROJECT_MEMORY_API_BASE),
+        projectId: projectId || null,
+        memoryItemsLoaded: projectContext.memoryItemsUsed || 0,
+        contextItemsLoaded: projectContext.contextItemsUsed || 0,
+        methodologyItemsLoaded: projectContext.methodologyItemsUsed || 0,
+        saved: memorySaved,
+        contextError: projectContextError,
+        saveError: memorySaveError,
+      },      
       meta: { timestamp: new Date().toISOString(), hasSources },
     });
   } catch (err) {

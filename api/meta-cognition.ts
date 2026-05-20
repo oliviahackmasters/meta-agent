@@ -6,14 +6,7 @@ import { buildPromptContext, type UserMemory } from "../lib/contextBuilder.js";
 import { runModels } from "../lib/runModels.js";
 import { generateSearchQueries } from "../lib/generateSearchQueries.js";
 import { needsWebResearch, webSearch } from "../lib/webSearch.js";
-import {
-  buildProjectMemoryContext,
-  getProjectMemory,
-  isProjectMemoryConfigured,
-  saveProjectMemoryItem,
-  summariseOutputForMemory,
-  upsertProject,
-} from "../lib/projectMemory.js";
+
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
