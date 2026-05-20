@@ -1,3 +1,5 @@
+// meta-cognition.ts
+
 import { routeUserQuery } from "../lib/router.js";
 import { fetchSources } from "../lib/fetchSources.js";
 import { buildEvidencePack } from "../lib/evidence.js";

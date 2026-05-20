@@ -1,88 +1,10 @@
 // meta-llm.js 
 import { GoogleGenAI } from "@google/genai";
-
-
-const PROJECT_MEMORY_API_BASE =
-  process.env.PROJECT_MEMORY_API_BASE ||
-  "https://project-memory-api.olivia-9ef.workers.dev";
-
-function summariseOutputForMemory(text, maxLength = 700) {
-  const clean = String(text || "").replace(/\s+/g, " ").trim();
-  return clean.length > maxLength ? clean.slice(0, maxLength - 3) + "..." : clean;
-}
-
-async function buildProjectContext({
-  projectId,
-  toolName,
-  task,
-  methodologyTags = [],
-  includeMethodology = true,
-  maxChars = 12000,
-}) {
-  if (!projectId) {
-    return {
-      contextBlock: "",
-      memoryItemsUsed: 0,
-      contextItemsUsed: 0,
-      methodologyItemsUsed: 0,
-    };
-  }
-
-  const response = await fetch(`${PROJECT_MEMORY_API_BASE}/api/context/build`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      projectId,
-      toolName,
-      task,
-      methodologyTags,
-      includeMethodology,
-      maxChars,
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Project context failed: ${response.status} ${text}`);
-  }
-
-  return await response.json();
-}
-
-async function saveProjectMemory({
-  projectId,
-  toolName,
-  type,
-  title,
-  summary,
-  content,
-  metadata,
-}) {
-  if (!projectId || !content) return null;
-
-  const response = await fetch(
-    `${PROJECT_MEMORY_API_BASE}/api/projects/${encodeURIComponent(projectId)}/memory`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        toolName,
-        type,
-        title,
-        summary,
-        content,
-        metadata,
-      }),
-    }
-  );
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Project memory save failed: ${response.status} ${text}`);
-  }
-
-  return await response.json();
-}
+import {
+  buildProjectContext,
+  saveProjectMemory,
+  summariseOutputForMemory,
+} from "../lib/projectMemoryClient.js";
 
 
 const AVAILABLE_PROVIDERS = ["openai", "claude", "gemini", "deepseek", "infomaniak"];
@@ -92,11 +14,33 @@ function wantsScenarioMatrix(text) { return /\b(scenario|matrix|2x2|scenarios|sc
 function augmentScenarioPrompt(text) { return `The user is requesting a scenario matrix output.\n- List the top 2-3 drivers affecting the industry.\n- Choose one driver for the X axis and one driver for the Y axis.\n- Present a 2x2 matrix as a simple table with axis labels.\n- In each of the four cells, briefly describe the scenario in 1-2 sentences.\n- Keep it concise and structured.\n\n${text}`; }
 
 function buildModelPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix, conversationHistory = "", projectMemoryContext = "") {
-  return `TODAY IS ${todayStr}. You are a research assistant with a sourcePack from Tavily.\n\n${projectMemoryContext ? `PROJECT MEMORY\nUse this as background context for the current project. Do not treat it as live evidence, and do not cite it as a source.\n\n${projectMemoryContext}\n\nEND PROJECT MEMORY\n\n` : ""}${sourcePackPrompt}\n\nOUTPUT RULES:\n- This is a new query. Use the current source pack for evidence.\n- Use project memory only for continuity and context.\n- Do not invent data, dates, statistics, or sources.\n- SCENARIO MATRIX: ${wantsScenarioMatrix ? "You may generate a 2x2 scenario matrix." : "Do NOT generate a scenario matrix unless requested."}\n- LANGUAGE: Use British English spelling.\n\n${conversationHistory ? `Conversation history:\n${conversationHistory}\n\n` : ""}User query:\n${prompt}`;
+  return `TODAY IS ${todayStr}. You are a research assistant with a sourcePack from Tavily.
+
+${projectMemoryContext ? `SHARED PROJECT CONTEXT
+Use this for continuity, client/project background and Hackmasters methodology. Do not treat it as live evidence, and do not cite it as a source.
+
+${projectMemoryContext}
+
+END SHARED PROJECT CONTEXT
+
+` : ""}${sourcePackPrompt}
+
+OUTPUT RULES:
+- This is a new query. Use the current source pack for evidence.
+- Use shared project context only for continuity and context.
+- Do not invent data, dates, statistics, or sources.
+- SCENARIO MATRIX: ${wantsScenarioMatrix ? "You may generate a 2x2 scenario matrix." : "Do NOT generate a scenario matrix unless requested."}
+- LANGUAGE: Use British English spelling.
+
+${conversationHistory ? `Conversation history:
+${conversationHistory}
+
+` : ""}User query:
+${prompt}`;
 }
 
 function buildCombinedPrompt(prompt, sourcePackPrompt, todayStr, wantsScenarioMatrix, projectMemoryContext = "") {
-  return `TODAY IS ${todayStr}. You are a research editor combining multiple model outputs into a final answer.\n\n${projectMemoryContext ? `PROJECT MEMORY\nUse this as background context for the current project. Do not treat it as live evidence, and do not cite it as a source.\n\n${projectMemoryContext}\n\nEND PROJECT MEMORY\n\n` : ""}${sourcePackPrompt}\n\nFINAL OUTPUT RULES:\n- Follow the user's intent.\n- Use the current source pack for evidence where sources are available.\n- Use project memory only for continuity and context.\n- Do not invent citations or use placeholder citations.\n- MATRIX: ${wantsScenarioMatrix ? "You may present a 2x2 scenario matrix." : "Do NOT generate a scenario matrix unless requested."}\n- LANGUAGE: Use British English spelling.\n\nUser query:\n${prompt}`;
+  return `TODAY IS ${todayStr}. You are a research editor combining multiple model outputs into a final answer.\n\n${projectMemoryContext ? `SHARED PROJECT CONTEXT\nUse this as background context for the current project. Do not treat it as live evidence, and do not cite it as a source.\n\n${projectMemoryContext}\n\nEND SHARED PROJECT CONTEXT\n\n` : ""}${sourcePackPrompt}\n\nFINAL OUTPUT RULES:\n- Follow the user's intent.\n- Use the current source pack for evidence where sources are available.\n- Use SHARED PROJECT CONTEXT only for continuity and context.\n- Do not invent citations or use placeholder citations.\n- MATRIX: ${wantsScenarioMatrix ? "You may present a 2x2 scenario matrix." : "Do NOT generate a scenario matrix unless requested."}\n- LANGUAGE: Use British English spelling.\n\nUser query:\n${prompt}`;
 }
 
 function classifyResearchMode(input) { const lower = input.toLowerCase(); if (/https?:\/\/|www\.|\b(extract|summarize these urls|from these urls|from these links|url:|urls:)\b/.test(lower)) return "extract"; if (/\b(research|analyse|analyze|investigate|study|deep dive|explore|benchmark|report|insights|analysis|future|trends|drivers|scenario|industry)\b/.test(lower)) return "research"; if (/\b(search|find|lookup|latest|current|today|recent|news|trend|trends|prices|forecast|update)\b/.test(lower)) return "search"; return "none"; }
@@ -154,9 +98,9 @@ if (projectId && useProjectMemory) {
   try {
     projectContext = await buildProjectContext({
       projectId,
-      toolName: "meta-llm",
+      toolName: "meta-cognition",
       task: rawPrompt,
-      methodologyTags: ["meta-cognition", "comparison", "scenario-planning", "drivers"],
+      methodologyTags: ["meta-cognition", "comparison", "scenario-planning", "drivers", "hackmasters-methodology"],
       includeMethodology: true,
       maxChars: 12000,
     });
@@ -218,7 +162,7 @@ if (projectId && saveToProjectMemory) {
 
     await saveProjectMemory({
       projectId,
-      toolName: "meta-llm",
+      toolName: "meta-cognition",
       type: "chat-output",
       title: userPrompt.slice(0, 120),
       summary: summariseOutputForMemory(combinedText || providerText),
@@ -257,7 +201,7 @@ if (projectId && saveToProjectMemory) {
       status: hasSources ? "success" : "no_sources",
       projectMemory: {
         enabled: Boolean(projectId),
-        configured: Boolean(PROJECT_MEMORY_API_BASE),
+        configured: true,
         projectId: projectId || null,
         memoryItemsLoaded: projectContext.memoryItemsUsed || 0,
         contextItemsLoaded: projectContext.contextItemsUsed || 0,
