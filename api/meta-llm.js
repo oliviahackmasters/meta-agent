@@ -1,9 +1,10 @@
+// meta-llm.js 
 import { GoogleGenAI } from "@google/genai";
 
 
 const PROJECT_MEMORY_API_BASE =
   process.env.PROJECT_MEMORY_API_BASE ||
-  "https://project-memory-api.olivia-9ef.workers.dev/";
+  "https://project-memory-api.olivia-9ef.workers.dev";
 
 function summariseOutputForMemory(text, maxLength = 700) {
   const clean = String(text || "").replace(/\s+/g, " ").trim();
